@@ -176,7 +176,16 @@ class Omega:
                         are used to calculate the psi values of the fluid
     """
 
-    @jit(nopython=True, parallel=True)
+    
+
+
+    def solve_fluid_parallel(self, rho0, T):
+        """
+        d^2(V)/dx^2 = (V[i-1] - 2V[i] + V[i-1]) / dx^2
+
+        """
+
+        @jit(nopython=True, parallel=True)
     def update_psi(self, psi_old, rho0, T):
         psi_new = psi_old.copy()
         for i in prange(1, self.Nx - 1):
@@ -210,13 +219,6 @@ class Omega:
 
 
         return psi_new
-
-
-    def solve_fluid(self, rho0, T):
-        """
-        d^2(V)/dx^2 = (V[i-1] - 2V[i] + V[i-1]) / dx^2
-
-        """
 
         # Calculate surface potential, Grahame Equation
         A = sigma_value**2 / (2*eps*constants.epsilon_0*constants.k*T*rho0)
