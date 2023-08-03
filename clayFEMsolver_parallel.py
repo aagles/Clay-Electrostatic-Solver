@@ -22,6 +22,7 @@ from scipy.optimize import newton
 from mpl_toolkits.mplot3d import Axes3D
 from multiprocessing import Pool
 import os 
+from numba import jit, prange
 
 
 
@@ -175,10 +176,48 @@ class Omega:
                         are used to calculate the psi values of the fluid
     """
 
-    def solve_fluid_parallel(self, rho0, T):
+    @jit(nopython=True, parallel=True)
+    def update_psi(self, psi_old, rho0, T):
+        psi_new = psi_old.copy()
+        for i in prange(1, self.Nx - 1):
+            for j in prange(1, self.Ny - 1):
+                for k in prange(1, self.Nz - 1):
+                    if self.solid[i, j, k] == 0: # Only update for fluid points
+
+                        RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
+                            * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
+
+                        # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
+                        A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
+                        a = self.dx
+                        B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
+                        b = self.dy
+                        C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
+                        c = self.dz
+                        D = RHS 
+                        numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
+                        denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
+
+                        psi_new[i,j,k] = numerator / denominator
+
+                        # Apply Neumann boundary conditions at the edges of the domain
+                        psi_new[0, :, :] = psi_new[1, :, :]
+                        psi_new[-1, :, :] = psi_new[-2, :, :]
+                        psi_new[:, 0, :] = psi_new[:, 1, :]
+                        psi_new[:, -1, :] = psi_new[:, -2, :]
+                        psi_new[:, :, 0] = psi_new[:, :, 1]
+                        psi_new[:, :, -1] = psi_new[:, :, -2]
+
+
+        return psi_new
+
+
+    def solve_fluid(self, rho0, T):
         """
         d^2(V)/dx^2 = (V[i-1] - 2V[i] + V[i-1]) / dx^2
+
         """
+
         # Calculate surface potential, Grahame Equation
         A = sigma_value**2 / (2*eps*constants.epsilon_0*constants.k*T*rho0)
         B = constants.e / (constants.k * T)
@@ -190,59 +229,30 @@ class Omega:
 
         # Define tolerance and maximum iterations for convergence
         tolerance = 1e-6
-        max_iterations = 1000
+        max_iterations = 100
 
-        # Create a Pool of processes
-        with Pool() as pool:
-            for iteration in range(max_iterations):
-                if (iteration % 10) == 0:
-                    print('Iteration '+str(iteration))
+        for iteration in range(max_iterations):
+            if (iteration % 10) == 0:
+                print('Iteration '+str(iteration))
+            psi_old = self.psi.copy()
+            self.psi = update_psi(psi_old, rho0, T)
 
-                # Create a copy of the potential field to calculate the change
-                psi_old = self.psi.copy()
 
-                # Update the potential field
-                grid_points = [(i, j, k) for i in range(1, self.Nx - 1) for j in range(1, self.Ny - 1) for k in range(1, self.Nz - 1) if self.solid[i, j, k] == 0]
-                
-                # Function for updating potential field
-                def update_field(grid_point):
-                    i, j, k = grid_point
+            # Apply Neumann boundary conditions at the edges of the domain
+            self.psi[0, :, :] = self.psi[1, :, :]
+            self.psi[-1, :, :] = self.psi[-2, :, :]
+            self.psi[:, 0, :] = self.psi[:, 1, :]
+            self.psi[:, -1, :] = self.psi[:, -2, :]
+            self.psi[:, :, 0] = self.psi[:, :, 1]
+            self.psi[:, :, -1] = self.psi[:, :, -2]
 
-                    RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
-                            * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
+            # Check for convergence
+            if np.max(np.abs(psi_old - self.psi)) < tolerance:
+                print(f'Converged after {iteration} iterations')
+                break
 
-                    A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
-                    a = self.dx
-                    B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
-                    b = self.dy
-                    C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
-                    c = self.dz
-                    D = RHS 
-                    numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
-                    denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
-
-                    return (i, j, k, numerator / denominator)
-
-                results = pool.map(update_field, grid_points)
-
-                for i, j, k, val in results:
-                    self.psi[i, j, k] = val
-
-                # Apply Neumann boundary conditions at the edges of the domain
-                self.psi[0, :, :] = self.psi[1, :, :]
-                self.psi[-1, :, :] = self.psi[-2, :, :]
-                self.psi[:, 0, :] = self.psi[:, 1, :]
-                self.psi[:, -1, :] = self.psi[:, -2, :]
-                self.psi[:, :, 0] = self.psi[:, :, 1]
-                self.psi[:, :, -1] = self.psi[:, :, -2]
-        
-                # Check for convergence
-                if np.max(np.abs(psi_old - self.psi)) < tolerance:
-                    print(f'Converged after {iteration} iterations')
-                    break
-
-            if iteration == max_iterations - 1:
-                print('Warning: solve_fluid did not converge')
+        if iteration == max_iterations - 1:
+            print('Warning: solve_laplace did not converge')
 
 
 # Method to plot Psi
