@@ -20,6 +20,7 @@ from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
 from scipy.optimize import newton
 from mpl_toolkits.mplot3d import Axes3D
+import os
 
 
 
@@ -92,9 +93,9 @@ class Omega:
         """
         if read:
             # read all the necessary files to skip the above mesh initialization
-            self.solid = np.load(dir+'solid.npy')
-            self.surf  = np.load(dir+'surf.npy')
-            self.sigma = np.load(dir+'sigma.npy')
+            self.solid = np.load(os.path.join(dir,'solid.npy'))
+            self.surf  = np.load(os.path.join(dir,'surf.npy'))
+            self.sigma = np.load(os.path.join(dir,'sigma.npy'))
         else:
             half_Sx = Sx / 2
             half_Sy = Sy / 2

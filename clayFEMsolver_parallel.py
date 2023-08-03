@@ -21,6 +21,7 @@ from scipy.sparse.linalg import spsolve
 from scipy.optimize import newton
 from mpl_toolkits.mplot3d import Axes3D
 from multiprocessing import Pool
+import os 
 
 
 
@@ -84,7 +85,7 @@ class Omega:
     #### Initialize the indices for a solid element
     import numpy as np
 
-    def initialize_solid(self, Sx, Sy, d, R, loc, sigma_value, read):
+    def initialize_solid(self, Sx, Sy, d, R, loc, sigma_value, read, dir):
         """
         Defining the self.solid and self.surf for a solid rectangular object with width Sx by Sy and thickness, d
         Centering the object at [x_pos, y_pos, z_pos].
@@ -95,9 +96,9 @@ class Omega:
         """
         if read:
             # read all the necessary files to skip the above mesh initialization
-            self.solid = np.load('solid.npy')
-            self.surf  = np.load('surf.npy')
-            self.sigma = np.load('sigma.npy')
+            self.solid = np.load(os.path.join(dir,'solid.npy'))
+            self.surf  = np.load(os.path.join(dir,'surf.npy'))
+            self.sigma = np.load(os.path.join(dir,'sigma.npy'))
         else:
             half_Sx = Sx / 2
             half_Sy = Sy / 2
@@ -138,13 +139,6 @@ class Omega:
         np.save(dir+'solid.npy', self.solid)
         np.save(dir+'surf.npy', self.surf)
         np.save(dir+'sigma.npy', self.sigma)
-
-
-    def read_mesh(self, dir):
-        # read all the necessary files to skip the above mesh initialization
-        self.solid = np.load(dir+'solid.npy')
-        self.surf  = np.load(dir+'surf.npy')
-        self.sigma = np.load(dir+'sigma.npy')
     
 
     # Plotting the Object
@@ -281,11 +275,11 @@ class Omega:
 # Steps to implement:
 
 omega = Omega(Lx=60, Ly=60, Lz=60, dx=.1, dy=.1, dz=.1)
-omega.initialize_solid(Sx=40, Sy=40, d=2, R=100, loc=[30,30,30], sigma_value=0.1, read=True)
+omega.initialize_solid(Sx=40, Sy=40, d=2, R=100, loc=[30,30,30], sigma_value=0.1, read=True, dir='../mesh/')
 # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayFEMsolver/')
-omega.plot_object()
-# omega.solve_fluid_parallel(rho0=.1, T=300)
-# omega.plot_psi(y_pos=25)
+# omega.plot_object()
+omega.solve_fluid_parallel(rho0=.1, T=300)
+omega.plot_psi(y_pos=25)
 
 
 
