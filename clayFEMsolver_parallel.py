@@ -176,49 +176,11 @@ class Omega:
                         are used to calculate the psi values of the fluid
     """
 
-    
-
-
-    def solve_fluid_parallel(self, rho0, T):
+    def solve_fluid(self, rho0, T):
         """
         d^2(V)/dx^2 = (V[i-1] - 2V[i] + V[i-1]) / dx^2
 
         """
-
-        @jit(nopython=True, parallel=True)
-        def update_psi(psi_old, solid, rho0, e, eps, epsilon_0, k, T, dx, dy, dz, Nx, Ny, Nz):
-            psi_new = psi_old.copy()
-            for i in prange(1, Nx - 1):
-                for j in prange(1, Ny - 1):
-                    for k in prange(1, Nz - 1):
-                        if solid[i, j, k] == 0: # Only update for fluid points
-
-                            RHS = (((rho0*e)/(eps*epsilon_0)) 
-                                * (np.exp(-e*psi_old[i,j,k]/(k*T)) - np.exp(e*psi_old[i,j,k]/(k*T))))
-
-                            # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
-                            A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
-                            a = dx
-                            B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
-                            b = dy
-                            C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
-                            c = dz
-                            D = RHS 
-                            numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
-                            denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
-
-                            psi_new[i,j,k] = numerator / denominator
-
-                            # Apply Neumann boundary conditions at the edges of the domain
-                            psi_new[0, :, :] = psi_new[1, :, :]
-                            psi_new[-1, :, :] = psi_new[-2, :, :]
-                            psi_new[:, 0, :] = psi_new[:, 1, :]
-                            psi_new[:, -1, :] = psi_new[:, -2, :]
-                            psi_new[:, :, 0] = psi_new[:, :, 1]
-                            psi_new[:, :, -1] = psi_new[:, :, -2]
-
-
-            return psi_new
 
         # Calculate surface potential, Grahame Equation
         A = sigma_value**2 / (2*eps*constants.epsilon_0*constants.k*T*rho0)
@@ -236,10 +198,32 @@ class Omega:
         for iteration in range(max_iterations):
             if (iteration % 1) == 0:
                 print('Iteration '+str(iteration))
-            psi_old = self.psi.copy()
-            self.psi = update_psi(psi_old, self.solid, rho0, constants.e, eps, constants.epsilon_0, constants.k,
-                                  T, self.dx, self.dy, self.dz, self.Nx, self.Ny, self.Nz)
 
+            # Create a copy of the potential field to calculate the change
+            psi_old = self.psi.copy()
+
+            # Update the potential field
+            for i in range(1, self.Nx - 1):
+                for j in range(1, self.Ny - 1):
+                    for k in range(1, self.Nz - 1):
+                        if self.solid[i, j, k] == 0: # Only update for fluid points
+
+                            RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
+                                 * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
+                            
+                            # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D
+                            # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
+                            A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
+                            a = self.dx
+                            B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
+                            b = self.dy
+                            C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
+                            c = self.dz
+                            D = RHS 
+                            numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
+                            denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
+
+                            self.psi[i, j, k] = numerator / denominator
 
             # Apply Neumann boundary conditions at the edges of the domain
             self.psi[0, :, :] = self.psi[1, :, :]
@@ -256,6 +240,7 @@ class Omega:
 
         if iteration == max_iterations - 1:
             print('Warning: solve_laplace did not converge')
+
 
     # Method to save the Psi map
     def save_psi(self, fname):
