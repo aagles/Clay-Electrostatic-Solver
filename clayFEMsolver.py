@@ -191,7 +191,7 @@ class Omega:
         max_iterations = 100
 
         for iteration in range(max_iterations):
-            if (iteration % 10) == 0:
+            if (iteration % 1) == 0:
                 print('Iteration '+str(iteration))
 
             # Create a copy of the potential field to calculate the change
@@ -237,6 +237,11 @@ class Omega:
             print('Warning: solve_laplace did not converge')
 
 
+    # Method to save the Psi map
+    def save_psi(self, fname):
+        np.save(fname, self.psi)
+
+
 # Method to plot Psi
     def plot_psi(self, y_pos):
         # Check if y_index is within the domain
@@ -255,7 +260,8 @@ class Omega:
         plt.xlabel('x')
         plt.ylabel('z')
         plt.title(f'Density map of potential $\Psi$ in xz plane at y-index {y_index}')
-        plt.show()
+        # plt.show()
+        
 
 
 
@@ -265,8 +271,9 @@ class Omega:
 omega = Omega(Lx=60, Ly=60, Lz=60, dx=.1, dy=.1, dz=.1)
 omega.initialize_solid(Sx=40, Sy=40, d=2, R=100, loc=[30,30,30], sigma_value=0.1, read=True, dir='../mesh/')
 # omega.save_mesh('../mesh/')
-omega.plot_object()
-# omega.solve_fluid(rho0=.1, T=300)
+# omega.plot_object()
+omega.solve_fluid(rho0=.1, T=300)
+omega.save_psi('psi_map.npy')
 # omega.plot_psi(y_pos=25)
 
 

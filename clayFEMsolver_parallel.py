@@ -234,7 +234,7 @@ class Omega:
         max_iterations = 100
 
         for iteration in range(max_iterations):
-            if (iteration % 10) == 0:
+            if (iteration % 1) == 0:
                 print('Iteration '+str(iteration))
             psi_old = self.psi.copy()
             self.psi = update_psi(psi_old, self.solid, rho0, constants.e, eps, constants.epsilon_0, constants.k,
@@ -257,6 +257,9 @@ class Omega:
         if iteration == max_iterations - 1:
             print('Warning: solve_laplace did not converge')
 
+    # Method to save the Psi map
+    def save_psi(self, fname):
+        np.save(fname, self.psi)
 
 # Method to plot Psi
     def plot_psi(self, y_pos):
@@ -292,7 +295,8 @@ omega.initialize_solid(Sx=40, Sy=40, d=2, R=100, loc=[30,30,30], sigma_value=0.1
 # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayFEMsolver/')
 # omega.plot_object()
 omega.solve_fluid_parallel(rho0=.1, T=300)
-omega.plot_psi(y_pos=25)
+omega.save_psi('psi_map.npy')
+# omega.plot_psi(y_pos=25)
 
 
 
