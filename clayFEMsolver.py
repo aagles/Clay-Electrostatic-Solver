@@ -192,7 +192,9 @@ class Omega:
 
         for iteration in range(max_iterations):
             if (iteration % 1) == 0:
-                print('Iteration '+str(iteration))
+                print('Iteration '+str(iteration), flush=True)
+                np.save('current_psi.npy', self.psi)
+
 
             # Create a copy of the potential field to calculate the change
             psi_old = self.psi.copy()
@@ -246,7 +248,7 @@ class Omega:
     def plot_psi(self, y_pos):
         # Check if y_index is within the domain
         if y_pos < 0 or y_pos >= self.Ly:
-            print(f'Error: y_index should be in the range [0, {self.Ly}]')
+            print(f'Error: y_index should be in the range [0, {self.Ly}]', flush=True)
             return
 
         # Get the slice of the potential field at the given y-index

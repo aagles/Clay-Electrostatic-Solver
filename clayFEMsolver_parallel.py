@@ -178,6 +178,34 @@ class Omega:
 
     def solve_subdomain(args):
         subdomain, psi_old, rho0, T, a, b, c = args
+
+        # Update the potential field
+        for i in range(subdomain[0], subdomain[1] - 1):
+            for j in range(1, self.Ny - 1):
+                for k in range(1, self.Nz - 1):
+                    if self.solid[i, j, k] == 0: # Only update for fluid points
+
+                        RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
+                                * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
+                        
+                        # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D
+                        # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
+                        A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
+                        B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
+                        C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
+                        D = RHS 
+                        numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
+                        denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
+
+                        self.psi[i, j, k] = numerator / denominator
+
+        # Apply Neumann boundary conditions at the edges of the domain
+        self.psi[0, :, :] = self.psi[1, :, :]
+        self.psi[-1, :, :] = self.psi[-2, :, :]
+        self.psi[:, 0, :] = self.psi[:, 1, :]
+        self.psi[:, -1, :] = self.psi[:, -2, :]
+        self.psi[:, :, 0] = self.psi[:, :, 1]
+        self.psi[:, :, -1] = self.psi[:, :, -2]
         # Here, solve your problem on the given subdomain. This will depend on your specific problem.
         # Remember to handle the boundaries appropriately.
         # ...
@@ -219,6 +247,11 @@ class Omega:
             # Create a copy of the potential field to calculate the change
             psi_old = self.psi.copy()
 
+            # Parameters for the solving
+            a = self.dx
+            b = self.dy
+            c = self.dz
+
             # Update the potential field
             for i in range(1, self.Nx - 1):
                 for j in range(1, self.Ny - 1):
@@ -231,11 +264,8 @@ class Omega:
                             # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D
                             # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
                             A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
-                            a = self.dx
                             B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
-                            b = self.dy
                             C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
-                            c = self.dz
                             D = RHS 
                             numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
                             denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
