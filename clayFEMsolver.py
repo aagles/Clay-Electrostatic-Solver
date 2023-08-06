@@ -101,34 +101,49 @@ class Omega:
             half_Sy = Sy / 2
             half_d  = d  / 2
 
-            for i in range(self.Nx):
-                for j in range(self.Ny):
-                    for k in range(self.Nz):
-                        x = i * self.dx # x-coordinate
-                        y = j * self.dy # y-coordinate
-                        z = k * self.dz # z-coordinate
+            
+            x = np.arange(0,self.Lx,self.dx)
+            y = np.arange(0,self.Ly,self.dy)
 
-                        if abs(x - loc[0]) <= half_Sx and abs(y - loc[1]) <= half_Sy:
-                            z_squared = R**2 - (x - loc[0])**2   # - (y - y_pos)**2
+            start_x = int(np.where(x > loc[0] - half_Sx)[0][0]) # find the first time x reaches the clay
+            end_x = int(np.where(x > loc[0] + half_Sx)[0][0])
 
-                            if z_squared >= 0:
-                                z = int(np.sqrt(z_squared) + loc[2] - R)
-                                start_index_z = int( (z - half_d) / self.dz )       
-                                end_index_z = int( (z + half_d) / self.dz )
+            start_y = int(np.where(y > loc[1] - half_Sy)[0][0]) # find the first time y reaches the clay
+            end_y = int(np.where(y > loc[1] + half_Sy)[0][0])
 
-                                start_index_z = max(0, start_index_z)
-                                end_index_z = min(self.Nz - 1, end_index_z)
+            for i in np.arange(start_x, end_x):
+                for j in np.arange(start_y, end_y):
+                    x_val = i * self.dx # x-coordinate
+                    y_val = j * self.dy # y-coordinate
 
-                                # Label Solid elements
-                                for kk in range(start_index_z, end_index_z + 1):
-                                    self.solid[i, j, kk] = 1
+                    
+                    z_squared = R**2 - (x_val - loc[0])**2   # - (y - y_pos)**2
 
-                                # Label Surface Elements
-                                self.surf[i, j, start_index_z] = 1
-                                self.surf[i, j, end_index_z] = 1
+                    if z_squared >= 0:
+                        z = np.sqrt(z_squared) + loc[2] - R
+                        start_index_z = int( (z - half_d) / self.dz )       
+                        end_index_z = int( (z + half_d) / self.dz )
 
-                                self.sigma[i, j, start_index_z] = sigma_value
-                                self.sigma[i, j, end_index_z] = sigma_value
+                        start_index_z = max(0, start_index_z)
+                        end_index_z = min(self.Nz - 1, end_index_z)
+
+                        # Label Solid elements
+                        for kk in range(start_index_z, end_index_z + 1):
+                            self.solid[i, j, kk] = 1
+
+                        # Label Surface Elements
+                        self.surf[i, j, start_index_z] = 1
+                        self.surf[i, j, end_index_z] = 1
+
+                        self.sigma[i, j, start_index_z] = sigma_value
+                        self.sigma[i, j, end_index_z] = sigma_value
+
+                        if (int(i)==start_x or int(i)==end_x-1 or int(j)==start_y or int(j)==end_y-1):
+                            for kkkk in range(start_index_z, end_index_z + 1):
+                                self.surf[i, j, kkkk] = 1
+                                self.sigma[i, j, kkkk] = 1
+                            
+                                    
 
     def save_mesh(self, dir):
         # save all the the necessary files as numpy arrays in the inputted dir
@@ -137,6 +152,26 @@ class Omega:
         np.save(dir+'surf.npy', self.surf)
         np.save(dir+'sigma.npy', self.sigma)
    
+
+   # Method to plot Psi
+    def plot_solid2D(self, y_pos):
+        # Check if y_index is within the domain
+        if y_pos < 0 or y_pos >= self.Ly:
+            print(f'Error: y_index should be in the range [0, {self.Ly}]', flush=True)
+            return
+
+        # Get the slice of the potential field at the given y-index
+        y_index = int(round(y_pos/self.dy))
+        psi_slice = self.surf[:, y_index, :]
+
+        # Create the plot
+        plt.figure(figsize=(8, 6))
+        plt.imshow(psi_slice.T, origin='lower', extent=[0, self.Lx, 0, self.Lz], cmap='viridis')
+        plt.colorbar(label='Potential V')
+        plt.xlabel('x')
+        plt.ylabel('z')
+        plt.title(f'Density map of potential $\Psi$ in xz plane at y-index {y_index}')
+        plt.show()
     
     # Plotting the Object
     def plot_object(self):
@@ -270,12 +305,13 @@ class Omega:
 
 # Steps to implement:
 
-omega = Omega(Lx=60, Ly=60, Lz=60, dx=.1, dy=.1, dz=.1)
-omega.initialize_solid(Sx=40, Sy=40, d=2, R=100, loc=[30,30,30], sigma_value=0.1, read=True, dir='../mesh/')
+omega = Omega(Lx=20, Ly=20, Lz=20, dx=.01, dy=.01, dz=.01)
+omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], sigma_value=0.1, read=False, dir='../mesh/')
 # omega.save_mesh('../mesh/')
+# omega.plot_solid2D(y_pos=10)
 # omega.plot_object()
-omega.solve_fluid(rho0=.1, T=300)
-omega.save_psi('psi_map.npy')
+# omega.solve_fluid(rho0=.1, T=300)
+# omega.save_psi('psi_map.npy')
 # omega.plot_psi(y_pos=25)
 
 
