@@ -177,13 +177,14 @@ class Omega:
     """
 
     def solve_subdomain(args):
-        subdomain, psi_old, rho0, T, a, b, c = args
+        subdomain, psi_old, solid, rho0, T, a, b, c = args
 
+        psi_new = psi_old.copy()
         # Update the potential field
         for i in range(subdomain[0], subdomain[1] - 1):
-            for j in range(1, self.Ny - 1):
-                for k in range(1, self.Nz - 1):
-                    if self.solid[i, j, k] == 0: # Only update for fluid points
+            for j in range(1, subdomain[2] - 1):
+                for k in range(1, subdomain[3] - 1):
+                    if solid[i, j, k] == 0: # Only update for fluid points
 
                         RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
                                 * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
@@ -197,31 +198,21 @@ class Omega:
                         numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
                         denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
 
-                        self.psi[i, j, k] = numerator / denominator
+                        psi_new[i, j, k] = numerator / denominator
 
         # Apply Neumann boundary conditions at the edges of the domain
-        self.psi[0, :, :] = self.psi[1, :, :]
-        self.psi[-1, :, :] = self.psi[-2, :, :]
-        self.psi[:, 0, :] = self.psi[:, 1, :]
-        self.psi[:, -1, :] = self.psi[:, -2, :]
-        self.psi[:, :, 0] = self.psi[:, :, 1]
-        self.psi[:, :, -1] = self.psi[:, :, -2]
-        # Here, solve your problem on the given subdomain. This will depend on your specific problem.
-        # Remember to handle the boundaries appropriately.
-        # ...
+        psi_new[0, :, :] = psi_new[1, :, :]
+        psi_new[-1, :, :] = psi_new[-2, :, :]
+        psi_new[:, 0, :] = psi_new[:, 1, :]
+        psi_new[:, -1, :] = psi_new[:, -2, :]
+        psi_new[:, :, 0] = psi_new[:, :, 1]
+        psi_new[:, :, -1] = psi_new[:, :, -2]
 
-    def domain_decomposition(Nx, Ny, Nz, num_processes):
-        # split the domain into num_processes subdomains
-        # here we are just splitting along the x-axis
-        subdomains = [(i*Nx//num_processes, (i+1)*Nx//num_processes, Ny, Nz) for i in range(num_processes)]
-        args = [(subdomain, psi_old, rho0, T, a, b, c) for subdomain in subdomains]
-        with Pool(num_processes) as p:
-            results = p.map(solve_subdomain, args)
-        # combine results from all subdomains
-        # again, how you do this will depend on your specific problem
-        # ...
+        return psi_new
+        
+        
 
-    def solve_fluid(self, rho0, T):
+    def solve_fluid_parallel(self, rho0, T, num_processes):
         """
         d^2(V)/dx^2 = (V[i-1] - 2V[i] + V[i-1]) / dx^2
 
@@ -236,6 +227,9 @@ class Omega:
         self.psi[self.surf == 1] = psi_s
         print(psi_s)
 
+        # Subdomain Information
+        subdomains = [(i*self.Nx//num_processes, (i+1)*self.Nx//num_processes, self.Ny, self.Nz) for i in range(num_processes)]
+
         # Define tolerance and maximum iterations for convergence
         tolerance = 1e-6
         max_iterations = 100
@@ -246,12 +240,20 @@ class Omega:
 
             # Create a copy of the potential field to calculate the change
             psi_old = self.psi.copy()
+            
+            # call the parallel calculation of the entire domain
+            #args = (lower_x, upper_x, Ny, Nz, psi_old, solid, rho0, T, a, b, c)
+            args = [(subdomain, psi_old, self.solid, rho0, T, self.dx, self.dy, self.dz) for subdomain in subdomains]
+            with Pool(num_processes) as p:
+                results = p.map(solve_subdomain, args)
 
-            # Parameters for the solving
-            a = self.dx
-            b = self.dy
-            c = self.dz
+            # combine results from all subdomains
+            self.psi = np.concatenate(subdomains, axis=0)
+            # again, how you do this will depend on your specific problem
+            # ...
+           
 
+            
             # Update the potential field
             for i in range(1, self.Nx - 1):
                 for j in range(1, self.Ny - 1):
@@ -320,14 +322,21 @@ class Omega:
 
 
 
-# Steps to implement:
+# Some Constants:
+eps         = 80   # dielectric constant of water
+sigma_value = -0.1 # charge density of a single mesh element (C/m^3)
+rho0        = 0.01 # number density of ions in the system
+T           = 300  # temperature (K)
 
-omega = Omega(Lx=60, Ly=60, Lz=60, dx=.1, dy=.1, dz=.1)
-omega.initialize_solid(Sx=40, Sy=40, d=2, R=100, loc=[30,30,30], sigma_value=0.1, read=True, dir='../mesh/')
+# Steps to implement:
+oneD=False
+
+omega = Omega(Lx=20, Ly=20, Lz=20, dx=.01, dy=.01, dz=.01)
+omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=True, dir='../mesh/')
 # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayFEMsolver/')
 # omega.plot_object()
-omega.solve_fluid_parallel(rho0=.1, T=300)
-omega.save_psi('psi_map.npy')
+omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
+# omega.save_psi('psi_map.npy')
 # omega.plot_psi(y_pos=25)
 
 

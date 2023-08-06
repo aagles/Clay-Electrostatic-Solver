@@ -24,9 +24,6 @@ import os
 
 
 
-# Some Constants:
-eps = 80 # dielectric constant of water
-sigma_value = -0.1 # charge density of a single mesh element (C/m^3)
 
 
 # ## Initialize Background Mesh (Class), $\Omega$
@@ -82,7 +79,7 @@ class Omega:
     ## SOLID Initialization Methods
     #### Initialize the indices for a solid element
 
-    def initialize_solid(self, Sx, Sy, d, R, loc, sigma_value, read, dir):
+    def initialize_solid(self, Sx, Sy, d, R, loc, oneD, sigma_value, read, dir):
         """
         Defining the self.solid and self.surf for a solid rectangular object with width Sx by Sy and thickness, d
         Centering the object at [x_pos, y_pos, z_pos].
@@ -108,13 +105,19 @@ class Omega:
             start_x = int(np.where(x > loc[0] - half_Sx)[0][0]) # find the first time x reaches the clay
             end_x = int(np.where(x > loc[0] + half_Sx)[0][0])
 
-            start_y = int(np.where(y > loc[1] - half_Sy)[0][0]) # find the first time y reaches the clay
-            end_y = int(np.where(y > loc[1] + half_Sy)[0][0])
+            if oneD: # if periodic in y:
+                y = [0, self.dy]
+                start_y = y[0]
+                end_y = y[-1]
+                half_Sy = self.dy / 2
+            else:
+                start_y = int(np.where(y > loc[1] - half_Sy)[0][0]) # find the first time y reaches the clay
+                end_y = int(np.where(y > loc[1] + half_Sy)[0][0])
 
-            for i in np.arange(start_x, end_x):
-                for j in np.arange(start_y, end_y):
-                    x_val = i * self.dx # x-coordinate
-                    y_val = j * self.dy # y-coordinate
+            for i in np.arange(start_x, end_x+1):
+                for j in np.arange(start_y, end_y+1):
+                    x_val = x[i] # x-coordinate
+                    y_val = y[i] # y-coordinate
 
                     
                     z_squared = R**2 - (x_val - loc[0])**2   # - (y - y_pos)**2
@@ -138,7 +141,7 @@ class Omega:
                         self.sigma[i, j, start_index_z] = sigma_value
                         self.sigma[i, j, end_index_z] = sigma_value
 
-                        if (int(i)==start_x or int(i)==end_x-1 or int(j)==start_y or int(j)==end_y-1):
+                        if ((int(i)==start_x or int(i)==end_x) or (int(j)==start_y or int(j)==end_y)):
                             for kkkk in range(start_index_z, end_index_z + 1):
                                 self.surf[i, j, kkkk] = 1
                                 self.sigma[i, j, kkkk] = 1
@@ -154,7 +157,10 @@ class Omega:
    
 
    # Method to plot Psi
-    def plot_solid2D(self, y_pos):
+    def plot_solid2D(self, y_pos, oneD):
+        # If 1-D case
+        if oneD:
+            y_pos = self.dy / 2
         # Check if y_index is within the domain
         if y_pos < 0 or y_pos >= self.Ly:
             print(f'Error: y_index should be in the range [0, {self.Ly}]', flush=True)
@@ -162,7 +168,7 @@ class Omega:
 
         # Get the slice of the potential field at the given y-index
         y_index = int(round(y_pos/self.dy))
-        psi_slice = self.surf[:, y_index, :]
+        psi_slice = self.solid[:, y_index, :]
 
         # Create the plot
         plt.figure(figsize=(8, 6))
@@ -301,16 +307,20 @@ class Omega:
         
 
 
-
+# Some Constants:
+eps         = 80   # dielectric constant of water
+sigma_value = -0.1 # charge density of a single mesh element (C/m^3)
+rho0        = 0.01 # number density of ions in the system
+T           = 300  # temperature (K)
 
 # Steps to implement:
-
-omega = Omega(Lx=20, Ly=20, Lz=20, dx=.01, dy=.01, dz=.01)
-omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], sigma_value=0.1, read=False, dir='../mesh/')
-# omega.save_mesh('../mesh/')
-# omega.plot_solid2D(y_pos=10)
+oneD=False
+omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
+omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=False, dir='../mesh/')
+omega.save_mesh('../mesh/')
+# omega.plot_solid2D(y_pos=10, oneD=oneD)
 # omega.plot_object()
-# omega.solve_fluid(rho0=.1, T=300)
+# omega.solve_fluid(rho0=rho0, T=T)
 # omega.save_psi('psi_map.npy')
 # omega.plot_psi(y_pos=25)
 
