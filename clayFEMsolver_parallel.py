@@ -289,7 +289,7 @@ class Omega:
             if iteration == max_iterations - 1:
                 print('Warning: solve_laplace did not converge')
 
-        # np.save(f'../data/abs_error_rho0_{rho0}.npy')
+        # np.save(f'../data/abs_error_rho0_{rho0}.npy', abs_error)
 
 
     # Method to save the Psi map
@@ -345,7 +345,7 @@ if __name__ == '__main__':
     # omega.plot_object()
     # omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
     # omega.save_psi(f'../data/psi_map_rho0_{rho0}.npy')
-    omega.plot_psi(y_pos=10, read=True, fn=f'../data/psi_map_rho0_{rho0}.npy')
+    omega.plot_psi(y_pos=10, read=True, fn=f'../data/final_psi.npy')
 
 
 
