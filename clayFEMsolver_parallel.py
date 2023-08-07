@@ -20,21 +20,54 @@ from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
 from scipy.optimize import newton
 from mpl_toolkits.mplot3d import Axes3D
-from multiprocessing import Pool
+from multiprocessing import Pool, freeze_support
 import os 
 from numba import jit, prange
 
 
 
-# Some Constants:
-eps = 80 # dielectric constant of water
-sigma_value = -0.1 # charge density of a single mesh element (C/m^3)
+# Function to solve subdomains
+def solve_subdomain(args):
+    subdomain, psi_old, solid, rho0, T, a, b, c = args
+
+    psi_domain = psi_old.copy() #[subdomain[0]:subdomain[1],:,:]
+    # Update the potential field
+    x_start = subdomain[0]+1
+    x_end = subdomain[1]-1 if subdomain[1]==psi_old.shape[0] else subdomain[1] # want to take the penultimate index for last subdomain
+
+    for i in range(x_start, x_end):
+        for j in range(1, subdomain[2] - 1):
+            for k in range(1, subdomain[3] - 1):
+                if solid[i, j, k] == 0: # Only update for fluid points
+
+                    RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
+                            * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
+                    
+                    # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D
+                    # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
+                    A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
+                    B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
+                    C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
+                    D = RHS 
+                    numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
+                    denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
+
+                    psi_domain[i, j, k] = numerator / denominator
+
+    # Apply Neumann boundary conditions at the edges of the domain
+    # psi_new[0, :, :] = psi_new[1, :, :]
+    # psi_new[-1, :, :] = psi_new[-2, :, :]
+    # psi_new[:, 0, :] = psi_new[:, 1, :]
+    # psi_new[:, -1, :] = psi_new[:, -2, :]
+    # psi_new[:, :, 0] = psi_new[:, :, 1]
+    # psi_new[:, :, -1] = psi_new[:, :, -2]
+
+    return psi_domain[subdomain[0]+1:subdomain[1],:,:]
 
 
 # ## Initialize Background Mesh (Class), $\Omega$
 # Create a class to represent the total mesh and to define the functions that need to be solved everywhere in the system
 #
-
 class Omega:
     def __init__(self, Lx, Ly, Lz, dx, dy, dz):
         self.Lx = Lx    # Size of the mesh in the x-direction
@@ -86,7 +119,7 @@ class Omega:
     #### Initialize the indices for a solid element
     import numpy as np
 
-    def initialize_solid(self, Sx, Sy, d, R, loc, sigma_value, read, dir):
+    def initialize_solid(self, Sx, Sy, d, R, loc, oneD, sigma_value, read, dir):
         """
         Defining the self.solid and self.surf for a solid rectangular object with width Sx by Sy and thickness, d
         Centering the object at [x_pos, y_pos, z_pos].
@@ -176,52 +209,21 @@ class Omega:
                         are used to calculate the psi values of the fluid
     """
 
-    def solve_subdomain(args):
-        subdomain, psi_old, solid, rho0, T, a, b, c = args
-
-        psi_new = psi_old.copy()
-        # Update the potential field
-        for i in range(subdomain[0], subdomain[1] - 1):
-            for j in range(1, subdomain[2] - 1):
-                for k in range(1, subdomain[3] - 1):
-                    if solid[i, j, k] == 0: # Only update for fluid points
-
-                        RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
-                                * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
-                        
-                        # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D
-                        # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
-                        A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
-                        B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
-                        C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
-                        D = RHS 
-                        numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
-                        denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
-
-                        psi_new[i, j, k] = numerator / denominator
-
-        # Apply Neumann boundary conditions at the edges of the domain
-        psi_new[0, :, :] = psi_new[1, :, :]
-        psi_new[-1, :, :] = psi_new[-2, :, :]
-        psi_new[:, 0, :] = psi_new[:, 1, :]
-        psi_new[:, -1, :] = psi_new[:, -2, :]
-        psi_new[:, :, 0] = psi_new[:, :, 1]
-        psi_new[:, :, -1] = psi_new[:, :, -2]
-
-        return psi_new
+    
         
         
 
     def solve_fluid_parallel(self, rho0, T, num_processes):
         """
-        d^2(V)/dx^2 = (V[i-1] - 2V[i] + V[i-1]) / dx^2
+        d^2(V)/dx^2 = (V[i+1] - 2V[i] + V[i-1]) / dx^2
 
         """
-
         # Calculate surface potential, Grahame Equation
         A = sigma_value**2 / (2*eps*constants.epsilon_0*constants.k*T*rho0)
         B = constants.e / (constants.k * T)
-        psi_s = ( log(0.5*(A-sqrt(A+4)*sqrt(A)+2)) ) / B
+        psi_s = ( log(0.5*(A+sqrt(A+4)*sqrt(A)+2)) ) / B
+        # C = constants.e * sigma_value**2 / (4*constants.k*T*constants.epsilon_0*eps*rho0)
+        # psi_s = ( acosh(C - C + 2) ) / B
 
         # Set initial conditions
         self.psi[self.surf == 1] = psi_s
@@ -233,10 +235,14 @@ class Omega:
         # Define tolerance and maximum iterations for convergence
         tolerance = 1e-6
         max_iterations = 100
+        abs_error = np.empty(max_iterations)
 
         for iteration in range(max_iterations):
-            if (iteration % 1) == 0:
+            if (iteration % 10) == 0:
                 print('Iteration '+str(iteration))
+                np.save('../data/current_psi.npy', self.psi)
+            elif (iteration == max_iterations-1):
+                np.save('../data/final_psi.npy', self.psi)
 
             # Create a copy of the potential field to calculate the change
             psi_old = self.psi.copy()
@@ -244,59 +250,54 @@ class Omega:
             # call the parallel calculation of the entire domain
             #args = (lower_x, upper_x, Ny, Nz, psi_old, solid, rho0, T, a, b, c)
             args = [(subdomain, psi_old, self.solid, rho0, T, self.dx, self.dy, self.dz) for subdomain in subdomains]
+            
             with Pool(num_processes) as p:
                 results = p.map(solve_subdomain, args)
 
             # combine results from all subdomains
-            self.psi = np.concatenate(subdomains, axis=0)
-            # again, how you do this will depend on your specific problem
-            # ...
-           
+            for i, result in enumerate(results):
+                x_start = subdomains[i][0]+1
+
+                # if the last subdomain
+                if subdomains[i][1]==psi_old.shape[0]:
+                    x_end = subdomains[i][1]-1  
+                    self.psi[x_start:x_end, :, :] = result[0:-1,:,:] 
+                else: 
+                    x_end = subdomains[i][1]
+                    self.psi[x_start:x_end, :, :] = result
 
             
-            # Update the potential field
-            for i in range(1, self.Nx - 1):
-                for j in range(1, self.Ny - 1):
-                    for k in range(1, self.Nz - 1):
-                        if self.solid[i, j, k] == 0: # Only update for fluid points
-
-                            RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
-                                 * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
-                            
-                            # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D
-                            # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
-                            A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
-                            B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
-                            C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
-                            D = RHS 
-                            numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
-                            denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
-
-                            self.psi[i, j, k] = numerator / denominator
-
-            # Apply Neumann boundary conditions at the edges of the domain
-            self.psi[0, :, :] = self.psi[1, :, :]
-            self.psi[-1, :, :] = self.psi[-2, :, :]
-            self.psi[:, 0, :] = self.psi[:, 1, :]
-            self.psi[:, -1, :] = self.psi[:, -2, :]
-            self.psi[:, :, 0] = self.psi[:, :, 1]
-            self.psi[:, :, -1] = self.psi[:, :, -2]
+                
+                # Apply Neumann boundary conditions at the edges of the domain
+                self.psi[0, :, :] = self.psi[1, :, :]
+                self.psi[-1, :, :] = self.psi[-2, :, :]
+                self.psi[:, 0, :] = self.psi[:, 1, :]
+                self.psi[:, -1, :] = self.psi[:, -2, :]
+                self.psi[:, :, 0] = self.psi[:, :, 1]
+                self.psi[:, :, -1] = self.psi[:, :, -2]
 
             # Check for convergence
-            if np.max(np.abs(psi_old - self.psi)) < tolerance:
-                print(f'Converged after {iteration} iterations')
-                break
+            # if np.max(np.abs(psi_old - self.psi)) < tolerance:
+            #     print(f'Converged after {iteration} iterations')
+            #     break
 
-        if iteration == max_iterations - 1:
-            print('Warning: solve_laplace did not converge')
+            # Record rate of convergence
+            # abs_error[iteration] = np.max(np.abs(psi_old - self.psi))
+            
+
+
+            if iteration == max_iterations - 1:
+                print('Warning: solve_laplace did not converge')
+
+        # np.save(f'../data/abs_error_rho0_{rho0}.npy')
 
 
     # Method to save the Psi map
     def save_psi(self, fname):
         np.save(fname, self.psi)
 
-# Method to plot Psi
-    def plot_psi(self, y_pos):
+    # Method to plot Psi
+    def plot_psi(self, y_pos, read, fn):
         # Check if y_index is within the domain
         if y_pos < 0 or y_pos >= self.Ly:
             print(f'Error: y_index should be in the range [0, {self.Ly}]')
@@ -304,16 +305,21 @@ class Omega:
 
         # Get the slice of the potential field at the given y-index
         y_index = int(round(y_pos/self.dy))
-        psi_slice = self.psi[:, y_index, :]
+        if read:
+            psi_slice = np.load(fn)[:, y_index, :]
+        else:
+            psi_slice = self.psi[:, y_index, :]
 
         # Create the plot
         plt.figure(figsize=(8, 6))
-        plt.imshow(psi_slice.T, origin='lower', extent=[0, self.Lx, 0, self.Lz], cmap='viridis')
+        plt.imshow(psi_slice.T, origin='lower', extent=[0, self.Lx, 0, self.Lz], cmap='viridis') #, vmin=-0.2, vmax=0.8)
         plt.colorbar(label='Potential V')
         plt.xlabel('x')
         plt.ylabel('z')
         plt.title(f'Density map of potential $\Psi$ in xz plane at y-index {y_index}')
+        plt.savefig('../data/psi_final.png', dpi=300)
         plt.show()
+        
 
 
 
@@ -324,20 +330,22 @@ class Omega:
 
 # Some Constants:
 eps         = 80   # dielectric constant of water
-sigma_value = -0.1 # charge density of a single mesh element (C/m^3)
-rho0        = 0.01 # number density of ions in the system
+sigma_value = -0.2 # charge density of a single mesh element (C/m^3)
+rho0        = 0.1 # number density of ions in the system
 T           = 300  # temperature (K)
 
 # Steps to implement:
 oneD=False
 
-omega = Omega(Lx=20, Ly=20, Lz=20, dx=.01, dy=.01, dz=.01)
-omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=True, dir='../mesh/')
-# omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayFEMsolver/')
-# omega.plot_object()
-omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
-# omega.save_psi('psi_map.npy')
-# omega.plot_psi(y_pos=25)
+if __name__ == '__main__':
+    freeze_support()
+    omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
+    # omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=True, dir='../mesh/')
+    # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayFEMsolver/')
+    # omega.plot_object()
+    # omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
+    # omega.save_psi(f'../data/psi_map_rho0_{rho0}.npy')
+    omega.plot_psi(y_pos=10, read=True, fn=f'../data/psi_map_rho0_{rho0}.npy')
 
 
 
