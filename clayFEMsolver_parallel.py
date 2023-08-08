@@ -43,6 +43,7 @@ def solve_subdomain(args):
                     RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
                             * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
                     
+                    # Solving for Psi[i,j,k]
                     # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D
                     # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
                     A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
@@ -70,10 +71,11 @@ def solve_subdomain(args):
 #
 class Omega:
     def __init__(self, Lx, Ly, Lz, dx, dy, dz):
+        # size of the mesh in units of nm
         self.Lx = Lx    # Size of the mesh in the x-direction
         self.Ly = Ly    # Size of the mesh in the y-direction
         self.Lz = Lz    # Size of the mesh in the z-direction
-        self.dx = dx    # Dimension of the mesh elements in the x-direction
+        self.dx = dx    # Dimension of the mesh elements in the x-direction, also in nm
         self.dy = dy    # Dimension of the mesh elements in the y-direction
         self.dz = dz    # Dimension of the mesh elements in the z-direction
 
@@ -83,11 +85,6 @@ class Omega:
         self.Ny = int(self.Ly / self.dy)
         self.Nz = int(self.Lz / self.dz)
 
-        
-        # Calculate the number of elements in each direction
-        self.Nx = int(self.Lx / self.dx)
-        self.Ny = int(self.Ly / self.dy)
-        self.Nz = int(self.Lz / self.dz)
         
         # Initialize Variables for the SOLID mesh elements with numpy zeros
 
@@ -117,7 +114,6 @@ class Omega:
 
     ## SOLID Initialization Methods
     #### Initialize the indices for a solid element
-    import numpy as np
 
     def initialize_solid(self, Sx, Sy, d, R, loc, oneD, sigma_value, read, dir):
         """
@@ -219,11 +215,11 @@ class Omega:
 
         """
         # Calculate surface potential, Grahame Equation
-        A = sigma_value**2 / (2*eps*constants.epsilon_0*constants.k*T*rho0)
+        # A = sigma_value**2 / (2*eps*constants.epsilon_0*constants.k*T*rho0)
         B = constants.e / (constants.k * T)
-        psi_s = ( log(0.5*(A+sqrt(A+4)*sqrt(A)+2)) ) / B
-        # C = constants.e * sigma_value**2 / (4*constants.k*T*constants.epsilon_0*eps*rho0)
-        # psi_s = ( acosh(C - C + 2) ) / B
+        # psi_s = ( log(0.5*(A+sqrt(A+4)*sqrt(A)+2)) ) / B
+        C = sigma_value**2 / (4*constants.k*T*constants.epsilon_0*eps*rho0)
+        psi_s = ( acosh(C + 1) ) / B
 
         # Set initial conditions
         self.psi[self.surf == 1] = psi_s
@@ -234,22 +230,25 @@ class Omega:
 
         # Define tolerance and maximum iterations for convergence
         tolerance = 1e-6
-        max_iterations = 100
+        max_iterations = 1000
         abs_error = np.empty(max_iterations)
 
         for iteration in range(max_iterations):
             if (iteration % 10) == 0:
                 print('Iteration '+str(iteration))
-                np.save('../data/current_psi.npy', self.psi)
+                np.save('../data/current_psi_'+name+'.npy', self.psi)
             elif (iteration == max_iterations-1):
-                np.save('../data/final_psi.npy', self.psi)
+                np.save('../data/psi_map_'+name+'.npy', self.psi)
 
             # Create a copy of the potential field to calculate the change
             psi_old = self.psi.copy()
             
             # call the parallel calculation of the entire domain
             #args = (lower_x, upper_x, Ny, Nz, psi_old, solid, rho0, T, a, b, c)
-            args = [(subdomain, psi_old, self.solid, rho0, T, self.dx, self.dy, self.dz) for subdomain in subdomains]
+            a = self.dx * (1e-9) # converting to units of m
+            b = self.dy * (1e-9)
+            c = self.dz * (1e-9)
+            args = [(subdomain, psi_old, self.solid, rho0, T, a, b, c) for subdomain in subdomains]
             
             with Pool(num_processes) as p:
                 results = p.map(solve_subdomain, args)
@@ -282,14 +281,14 @@ class Omega:
             #     break
 
             # Record rate of convergence
-            # abs_error[iteration] = np.max(np.abs(psi_old - self.psi))
+            abs_error[iteration] = np.max(np.abs(psi_old - self.psi))
             
 
 
-            if iteration == max_iterations - 1:
-                print('Warning: solve_laplace did not converge')
+        if iteration == max_iterations - 1:
+            print('Warning: solve_laplace did not converge')
 
-        # np.save(f'../data/abs_error_rho0_{rho0}.npy', abs_error)
+        np.save('../data/abs_error_'+name+'.npy', abs_error)
 
 
     # Method to save the Psi map
@@ -309,14 +308,16 @@ class Omega:
             psi_slice = np.load(fn)[:, y_index, :]
         else:
             psi_slice = self.psi[:, y_index, :]
+        
+        psi_slice = psi_slice * 1000 # converting to mV
 
         # Create the plot
         plt.figure(figsize=(8, 6))
         plt.imshow(psi_slice.T, origin='lower', extent=[0, self.Lx, 0, self.Lz], cmap='viridis') #, vmin=-0.2, vmax=0.8)
-        plt.colorbar(label='Potential V')
-        plt.xlabel('x')
-        plt.ylabel('z')
-        plt.title(f'Density map of potential $\Psi$ in xz plane at y-index {y_index}')
+        plt.colorbar(label='Potential $\Psi (mV)$')
+        plt.xlabel('x (nm)')
+        plt.ylabel('z (nm)')
+        plt.title(f'Density map of potential $\Psi (mV)$ in xz plane at y-index {y_index}')
         plt.savefig('../data/psi_final.png', dpi=300)
         plt.show()
         
@@ -331,8 +332,10 @@ class Omega:
 # Some Constants:
 eps         = 80   # dielectric constant of water
 sigma_value = -0.2 # charge density of a single mesh element (C/m^3)
-rho0        = 0.1 # number density of ions in the system
+rho0_M      = 1  # inputted rho density of ions in the system (mol/L)
+rho0        = rho0_M * constants.Avogadro * 1000  # rho density in units of ions/m^3
 T           = 300  # temperature (K)
+name        = 'rho0_1_flat'
 
 # Steps to implement:
 oneD=False
@@ -340,12 +343,12 @@ oneD=False
 if __name__ == '__main__':
     freeze_support()
     omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
-    # omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=True, dir='../mesh/')
+    omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=True, dir='../meshFlat/')
     # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayFEMsolver/')
     # omega.plot_object()
-    # omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
-    # omega.save_psi(f'../data/psi_map_rho0_{rho0}.npy')
-    omega.plot_psi(y_pos=10, read=True, fn=f'../data/final_psi.npy')
+    omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=8)
+    omega.save_psi('../data/psi_map_'+name+'.npy')
+    # omega.plot_psi(y_pos=10, read=True, fn='../data/final_psi_rho0_'+str(rho0_M)+'.npy')
 
 
 

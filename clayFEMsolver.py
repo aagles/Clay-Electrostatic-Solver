@@ -309,16 +309,16 @@ class Omega:
 
 # Some Constants:
 eps         = 80   # dielectric constant of water
-sigma_value = -0.1 # charge density of a single mesh element (C/m^3)
+sigma_value = -0.2 # charge density of a single mesh element (C/m^3)
 rho0        = 0.01 # number density of ions in the system
 T           = 300  # temperature (K)
 
 # Steps to implement:
 oneD=False
 omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
-omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=False, dir='../mesh/')
-omega.save_mesh('../mesh/')
-# omega.plot_solid2D(y_pos=10, oneD=oneD)
+omega.initialize_solid(Sx=10, Sy=10, d=.2, R=10000, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=False, dir='../mesh/')
+omega.save_mesh('../meshFlat/')
+omega.plot_solid2D(y_pos=10, oneD=oneD)
 # omega.plot_object()
 # omega.solve_fluid(rho0=rho0, T=T)
 # omega.save_psi('psi_map.npy')
