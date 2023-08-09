@@ -32,7 +32,7 @@ def solve_subdomain(args):
 
     psi_domain = psi_old.copy() #[subdomain[0]:subdomain[1],:,:]
     # Update the potential field
-    x_start = subdomain[0]+1
+    x_start = subdomain[0]+1 if subdomain[0]==0 else subdomain[0]  # want the second index for first domain
     x_end = subdomain[1]-1 if subdomain[1]==psi_old.shape[0] else subdomain[1] # want to take the penultimate index for last subdomain
 
     for i in range(x_start, x_end):
@@ -63,7 +63,7 @@ def solve_subdomain(args):
     # psi_new[:, :, 0] = psi_new[:, :, 1]
     # psi_new[:, :, -1] = psi_new[:, :, -2]
 
-    return psi_domain[subdomain[0]+1:subdomain[1],:,:]
+    return psi_domain[x_start:x_end,:,:]
 
 
 # ## Initialize Background Mesh (Class), $\Omega$
@@ -255,13 +255,17 @@ class Omega:
 
             # combine results from all subdomains
             for i, result in enumerate(results):
-                x_start = subdomains[i][0]+1
-
-                # if the last subdomain
-                if subdomains[i][1]==psi_old.shape[0]:
+                
+                if subdomains[i][0]==0: # if first subdomain
+                    x_start = subdomains[i][0]+1
+                    x_end = subdomains[i][1]
+                    self.psi[x_start:x_end, :, :]  = result
+                elif subdomains[i][1]==psi_old.shape[0]:# if the last subdomain
+                    x_start = subdomains[i][0]
                     x_end = subdomains[i][1]-1  
-                    self.psi[x_start:x_end, :, :] = result[0:-1,:,:] 
+                    self.psi[x_start:x_end, :, :] = result
                 else: 
+                    x_start = subdomains[i][0]
                     x_end = subdomains[i][1]
                     self.psi[x_start:x_end, :, :] = result
 
@@ -335,7 +339,7 @@ sigma_value = -0.2 # charge density of a single mesh element (C/m^3)
 rho0_M      = 1  # inputted rho density of ions in the system (mol/L)
 rho0        = rho0_M * constants.Avogadro * 1000  # rho density in units of ions/m^3
 T           = 300  # temperature (K)
-name        = 'rho0_1_flat'
+name        = 'rho0_1'
 
 # Steps to implement:
 oneD=False
@@ -343,7 +347,7 @@ oneD=False
 if __name__ == '__main__':
     freeze_support()
     omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
-    omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=True, dir='../meshFlat/')
+    omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=True, dir='../mesh/')
     # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayFEMsolver/')
     # omega.plot_object()
     omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=8)
