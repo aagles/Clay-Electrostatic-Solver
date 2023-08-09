@@ -92,7 +92,7 @@ class Omega:
             # read all the necessary files to skip the above mesh initialization
             self.solid = np.load(os.path.join(dir,'solid.npy'))
             self.surf  = np.load(os.path.join(dir,'surf.npy'))
-            self.sigma = np.load(os.path.join(dir,'sigma.npy'))
+            self.sigma = self.surf * sigma_value
         else:
             half_Sx = Sx / 2
             half_Sy = Sy / 2

@@ -128,7 +128,7 @@ class Omega:
             # read all the necessary files to skip the above mesh initialization
             self.solid = np.load(os.path.join(dir,'solid.npy'))
             self.surf  = np.load(os.path.join(dir,'surf.npy'))
-            self.sigma = np.load(os.path.join(dir,'sigma.npy'))
+            self.sigma = self.surf * sigma_value
         else:
             half_Sx = Sx / 2
             half_Sy = Sy / 2
@@ -168,7 +168,6 @@ class Omega:
 
         np.save(dir+'solid.npy', self.solid)
         np.save(dir+'surf.npy', self.surf)
-        np.save(dir+'sigma.npy', self.sigma)
     
 
     # Plotting the Object
@@ -348,7 +347,7 @@ if __name__ == '__main__':
     freeze_support()
     omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
     omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=True, dir='../mesh/')
-    # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayFEMsolver/')
+    # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayPBEsolver/mesh')
     # omega.plot_object()
     omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=8)
     omega.save_psi('../data/psi_map_'+name+'.npy')

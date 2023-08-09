@@ -22,7 +22,6 @@ from scipy.optimize import newton
 from mpl_toolkits.mplot3d import Axes3D
 from multiprocessing import Pool, freeze_support
 import os 
-from numba import jit, prange
 
 
 
@@ -36,22 +35,22 @@ def solve_subdomain(args):
     x_end = subdomain[1]-1 if subdomain[1]==psi_old.shape[0] else subdomain[1] # want to take the penultimate index for last subdomain
 
     for i in range(x_start, x_end):
-            for k in range(1, subdomain[2] - 1):
-                if solid[i, k] == 0: # Only update for fluid points
+        for k in range(1, subdomain[2] - 1):
+            if solid[i, k] == 0: # Only update for fluid points
 
-                    RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
-                            * (np.exp(-constants.e*psi_old[i,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
-                    
-                    # Solving for Psi[i,j,k]
-                    # for eqn with the form: (2x+A)/a^2 + (2x+C)/c^2 = D
-                    # x = [Da^2b^2c^2 - Ac^2 - Ca^2] / 2(c^2 + a^2c^2 + a^2)
-                    A = psi_old[i+1,k] + psi_old[i-1,k]
-                    C = psi_old[i,k+1] + psi_old[i,k-1]
-                    D = RHS 
-                    numerator = (D * a**2 * c**2) - (A * c**2 +  C * a**2)
-                    denominator = 2 * (c**2 + a**2 * c**2 + a**2)
+                RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
+                        * (np.exp(-constants.e*psi_old[i,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,k]/(constants.k*T))))
+                
+                # Solving for Psi[i,j,k]
+                # for eqn with the form: (2x+A)/a^2 + (2x+C)/c^2 = D
+                # x = [Da^2b^2c^2 - Ac^2 - Ca^2] / 2(c^2 + a^2c^2 + a^2)
+                A = psi_old[i+1,k] + psi_old[i-1,k]
+                C = psi_old[i,k+1] + psi_old[i,k-1]
+                D = RHS 
+                numerator = (D * a**2 * c**2) - (A * c**2 +  C * a**2)
+                denominator = 2 * (c**2 + a**2 * c**2 + a**2)
 
-                    psi_domain[i, k] = numerator / denominator
+                psi_domain[i, k] = numerator / denominator
 
 
     return psi_domain[x_start:x_end,:]
@@ -61,7 +60,7 @@ def solve_subdomain(args):
 # Create a class to represent the total mesh and to define the functions that need to be solved everywhere in the system
 #
 class Omega:
-    def __init__(self, Lx, Lz, dx, dy, dz):
+    def __init__(self, Lx, Lz, dx, dz):
         # size of the mesh in units of nm
         self.Lx = Lx    # Size of the mesh in the x-direction
         self.Lz = Lz    # Size of the mesh in the z-direction
@@ -104,7 +103,7 @@ class Omega:
     ## SOLID Initialization Methods
     #### Initialize the indices for a solid element
 
-    def initialize_solid(self, Sx, Sy, d, R, loc, sigma_value, read, dir):
+    def initialize_solid(self, Sx, d, R, loc, sigma_value, read, dir):
         """
         Defining the self.solid and self.surf for a solid rectangular object with width Sx by Sy and thickness, d
         Centering the object at [x_pos, y_pos, z_pos].
@@ -117,44 +116,53 @@ class Omega:
             # read all the necessary files to skip the above mesh initialization
             self.solid = np.load(os.path.join(dir,'solid.npy'))
             self.surf  = np.load(os.path.join(dir,'surf.npy'))
-            self.sigma = np.load(os.path.join(dir,'sigma.npy'))
+            self.sigma = self.surf * sigma_value
         else:
             half_Sx = Sx / 2
             half_d  = d  / 2
 
-            for i in range(self.Nx):
-                for k in range(self.Nz):
-                    x = i * self.dx # x-coordinate
-                    z = k * self.dz # z-coordinate
+            x = np.arange(0,self.Lx,self.dx)
 
-                    if abs(x - loc[0]) <= half_Sx:
-                        z_squared = R**2 - (x - loc[0])**2   
+            start_x = int(np.where(x > loc[0] - half_Sx)[0][0]) # find the first time x reaches the clay
+            end_x = int(np.where(x > loc[0] + half_Sx)[0][0])
 
-                        if z_squared >= 0:
-                            z = int(np.sqrt(z_squared) + loc[2] - R)
-                            start_index_z = int( (z - half_d) / self.dz )       
-                            end_index_z = int( (z + half_d) / self.dz )
 
-                            start_index_z = max(0, start_index_z)
-                            end_index_z = min(self.Nz - 1, end_index_z)
+            for i in np.arange(start_x, end_x+1):
+                x_val = x[i] # x-coordinate
 
-                            # Label Solid elements
-                            for kk in range(start_index_z, end_index_z + 1):
-                                self.solid[i, kk] = 1
+                
+                z_squared = R**2 - (x_val - loc[0])**2   # - (y - y_pos)**2
 
-                            # Label Surface Elements
-                            self.surf[i, start_index_z] = 1
-                            self.surf[i, end_index_z] = 1
+                if z_squared >= 0:
+                    z = np.sqrt(z_squared) + loc[1] - R
+                    start_index_z = int( (z - half_d) / self.dz )       
+                    end_index_z = int( (z + half_d) / self.dz )
 
-                            self.sigma[i, start_index_z] = sigma_value
-                            self.sigma[i, end_index_z] = sigma_value
+                    start_index_z = max(0, start_index_z)
+                    end_index_z = min(self.Nz - 1, end_index_z)
+
+                    # Label Solid elements
+                    for kk in range(start_index_z, end_index_z + 1):
+                        self.solid[i, kk] = 1
+
+                    # Label Surface Elements
+                    self.surf[i, start_index_z] = 1
+                    self.surf[i, end_index_z] = 1
+
+                    self.sigma[i, start_index_z] = sigma_value
+                    self.sigma[i, end_index_z] = sigma_value
+
+                    if (int(i)==start_x or int(i)==end_x):
+                        for kkkk in range(start_index_z, end_index_z + 1):
+                            self.surf[i, kkkk] = 1
+                            self.sigma[i, kkkk] = 1
 
     def save_mesh(self, dir):
         # save all the the necessary files as numpy arrays in the inputted dir
+        # if ~os.path.exists(dir): os.system('mkdir '+dir)
 
         np.save(dir+'solid.npy', self.solid)
         np.save(dir+'surf.npy', self.surf)
-        np.save(dir+'sigma.npy', self.sigma)
     
 
     # Plotting the Object
@@ -305,7 +313,7 @@ class Omega:
 
 # Some Constants:
 eps         = 80   # dielectric constant of water
-sigma_value = -0.2 # charge density of a single mesh element (C/m^3)
+sigma_value = -6.03E-3 # charge density of a single mesh element (C/m^3)
 rho0_M      = 1  # inputted rho density of ions in the system (mol/L)
 rho0        = rho0_M * constants.Avogadro * 1000  # rho density in units of ions/m^3
 T           = 300  # temperature (K)
@@ -315,12 +323,12 @@ name        = 'rho0_1'
 
 if __name__ == '__main__':
     freeze_support()
-    omega = Omega(Lx=20, Lz=20, dx=.1, dz=.1)
-    omega.initialize_solid(Sx=10, d=.2, R=8, loc=[10,10], sigma_value=sigma_value, read=True, dir='../mesh/')
-    # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayFEMsolver/')
+    omega = Omega(Lx=20, Lz=20, dx=.01, dz=.01)
+    omega.initialize_solid(Sx=10, d=.2, R=8, loc=[10,10], sigma_value=sigma_value, read=True, dir='../2Dmesh_hr/')
+    # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayPBEsolver/2Dmesh_hr/')
     # omega.plot_object()
-    # omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=8)
-    # omega.save_psi('../data/psi_map_'+name+'.npy')
+    omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
+    # omega.save_psi('../data/2D_psi_map_'+name+'.npy')
     # omega.plot_psi(y_pos=10, read=True, fn='../data/final_psi_rho0_'+str(rho0_M)+'.npy')
 
 
