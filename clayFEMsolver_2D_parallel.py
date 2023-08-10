@@ -206,7 +206,7 @@ class Omega:
         B = constants.e / (constants.k * T)
         # psi_s = ( log(0.5*(A+sqrt(A+4)*sqrt(A)+2)) ) / B
         C = sigma_value**2 / (4*constants.k*T*constants.epsilon_0*eps*rho0)
-        psi_s = ( acosh(C + 1) ) / B
+        psi_s = - ( acosh(C + 1) ) / B
 
         # Set initial conditions
         self.psi[self.surf == 1] = psi_s
