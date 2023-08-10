@@ -215,9 +215,8 @@ class Omega:
         # Subdomain Information
         subdomains = [(i*self.Nx//num_processes, (i+1)*self.Nx//num_processes, self.Nz) for i in range(num_processes)]
 
-        # Define tolerance and maximum iterations for convergence
-        tolerance = 1e-6
-        max_iterations = 1000
+        # Define when to stop the iterations
+        max_iterations = 5000
         abs_error = np.empty(max_iterations)
 
         for iteration in range(max_iterations):
@@ -263,14 +262,14 @@ class Omega:
                 self.psi[:, 0] = self.psi[:, 1]
                 self.psi[:, -1] = self.psi[:, -2]
 
-            # Check for convergence
-            # if np.max(np.abs(psi_old - self.psi)) < tolerance:
-            #     print(f'Converged after {iteration} iterations')
-            #     break
-
             # Record rate of convergence
             abs_error[iteration] = np.max(np.abs(psi_old - self.psi))
-            
+
+            # Check for convergence
+            if abs_error[iteration] > abs_error[iteration-1]:
+                print(f'Converged after {iteration} iterations')
+                break
+
 
 
         if iteration == max_iterations - 1:
