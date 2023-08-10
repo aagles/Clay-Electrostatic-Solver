@@ -223,9 +223,9 @@ class Omega:
         for iteration in range(max_iterations):
             if (iteration % 10) == 0:
                 print('Iteration '+str(iteration))
-                np.save('../data/2D_current_psi'+name+'.npy', self.psi)
+                np.save('../data/2D_current_psi_'+name+'.npy', self.psi)
             elif (iteration == max_iterations-1):
-                np.save('../data/2D_psi_map'+name+'.npy', self.psi)
+                np.save('../data/2D_psi_map_'+name+'.npy', self.psi)
 
             # Create a copy of the potential field to calculate the change
             psi_old = self.psi.copy()
