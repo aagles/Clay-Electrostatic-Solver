@@ -146,7 +146,7 @@ class Omega:
             for i in np.arange(start_x, end_x+1):
                 for j in np.arange(start_y, end_y+1):
                     x_val = x[i] # x-coordinate
-                    y_val = y[i] # y-coordinate
+                    y_val = y[j] # y-coordinate
 
                     
                     z_squared = R**2 - (x_val - loc[0])**2   # - (y - y_pos)**2
@@ -247,6 +247,10 @@ class Omega:
             if (iteration % 10) == 0:
                 print('Iteration '+str(iteration))
                 np.save('../data/current_psi_'+name+'.npy', self.psi)
+                # Check for convergence
+                if abs_error[iteration] > abs_error[iteration-10]:
+                    print(f'Converged after {iteration} iterations')
+                    break
             elif (iteration == max_iterations-1):
                 np.save('../data/psi_map_'+name+'.npy', self.psi)
 
@@ -293,10 +297,7 @@ class Omega:
             # Record rate of convergence
             abs_error[iteration] = np.max(np.abs(psi_old - self.psi))
 
-            # Check for convergence
-            if abs_error[iteration] > abs_error[iteration-1]:
-                print(f'Converged after {iteration} iterations')
-                break
+            
             
 
 
