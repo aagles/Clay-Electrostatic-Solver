@@ -16,13 +16,8 @@ import numpy as np
 from math import *
 import matplotlib.pyplot as plt
 import scipy.constants as constants
-from scipy.sparse import diags
-from scipy.sparse.linalg import spsolve
-from scipy.optimize import newton
-from mpl_toolkits.mplot3d import Axes3D
 from multiprocessing import Pool, freeze_support
 import os 
-from numba import jit, prange
 
 
 
@@ -87,7 +82,6 @@ class Omega:
 
         
         # Initialize Variables for the SOLID mesh elements with numpy zeros
-
         self.solid = np.zeros((self.Nx, self.Ny, self.Nz)) # 1 where solid element, zero everywhere else
         self.surf = np.zeros((self.Nx, self.Ny, self.Nz))  # 1 where surf element, zero everywhere else
         self.sigma = np.zeros((self.Nx, self.Ny, self.Nz)) # sigma_value where solid, zero everywhere else
@@ -182,6 +176,26 @@ class Omega:
         np.save(dir+'surf.npy', self.surf)
     
 
+    # Method to plot the Object
+    def plot_solid2D(self, y_pos, oneD):
+
+        if y_pos < 0 or y_pos >= self.Ly:
+            print(f'Error: y_index should be in the range [0, {self.Ly}]', flush=True)
+            return
+
+        # Get the slice of the potential field at the given y-index
+        y_index = int(round(y_pos/self.dy))
+        solid_slice = self.solid[:, y_index, :]
+
+        # Create the plot
+        plt.figure(figsize=(8, 6))
+        plt.imshow(solid_slice.T, origin='lower', extent=[0, self.Lx, 0, self.Lz], cmap='viridis')
+        plt.colorbar(label='Potential V')
+        plt.xlabel('x')
+        plt.ylabel('z')
+        plt.title(f'Map of the Solid in xz plane at y-index {y_index}')
+        plt.show()
+
     # Plotting the Object
     def plot_object(self):
         fig = plt.figure(figsize=(8, 6))
@@ -210,27 +224,19 @@ class Omega:
     """
     Boundary Conditions:
                         Neumann at Omega edges
-                        E_s = -sigma/eps/eps_0 at fluid solid interface
+                        Psi_s = grahame equation at FSI
                         Psi value of all solid elements are set to psi_s to avoid discontinuities
-                        This shouldn't impact the accuracy of the results as only the surface elements
-                        are used to calculate the psi values of the fluid
+                        Psi is not solved for anywhere inside of the solid
     """
-
-    
-        
-        
-
     def solve_fluid_parallel(self, rho0, T, num_processes):
         """
         d^2(V)/dx^2 = (V[i+1] - 2V[i] + V[i-1]) / dx^2
 
         """
         # Calculate surface potential, Grahame Equation
-        # A = sigma_value**2 / (2*eps*constants.epsilon_0*constants.k*T*rho0)
-        B = constants.e / (constants.k * T)
-        # psi_s = ( log(0.5*(A+sqrt(A+4)*sqrt(A)+2)) ) / B
-        C = sigma_value**2 / (4*constants.k*T*constants.epsilon_0*eps*rho0)
-        psi_s = - ( acosh(C + 1) ) / B
+        A = constants.e / (constants.k * T)
+        B = sigma_value**2 / (4*constants.k*T*constants.epsilon_0*eps*rho0)
+        psi_s = - ( acosh(B + 1) ) / A
 
         # Set initial conditions
         self.psi[self.surf == 1] = psi_s
@@ -239,18 +245,15 @@ class Omega:
         # Subdomain Information
         subdomains = [(i*self.Nx//num_processes, (i+1)*self.Nx//num_processes, self.Ny, self.Nz) for i in range(num_processes)]
 
-        # Define tolerance and maximum iterations for convergence
+        # Define maximum iterations for convergence and record error
         max_iterations = 5000
-        abs_error = np.empty(max_iterations)
+        abs_error = []
 
         for iteration in range(max_iterations):
             if (iteration % 10) == 0:
                 print('Iteration '+str(iteration))
                 np.save('../data/current_psi_'+name+'.npy', self.psi)
-                # Check for convergence
-                if abs_error[iteration] > abs_error[iteration-10]:
-                    print(f'Converged after {iteration} iterations')
-                    break
+                
             elif (iteration == max_iterations-1):
                 np.save('../data/psi_map_'+name+'.npy', self.psi)
 
@@ -295,14 +298,19 @@ class Omega:
 
 
             # Record rate of convergence
-            abs_error[iteration] = np.max(np.abs(psi_old - self.psi))
+            abs_error.append(np.max(np.abs(psi_old - self.psi)))
+
+            # Check for convergence
+            if abs_error[iteration] > abs_error[iteration-1]:
+                print(f'Converged after {iteration} iterations')
+                break
 
             
             
 
 
         if iteration == max_iterations - 1:
-            print('Warning: solve_laplace did not converge')
+            print('Warning: solve_fluid did not converge')
 
         np.save('../data/abs_error_'+name+'.npy', abs_error)
 
@@ -357,9 +365,10 @@ name        = 'sig_MMT_rho0_1_hr'
 if __name__ == '__main__':
     freeze_support()
     omega = Omega(Lx=20, Ly=20, Lz=20, dx=.01, dy=2, dz=.01)
-    omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], sigma_value=sigma_value, read=False, dir='../mesh_lry/')
+    omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], sigma_value=sigma_value, read=True, dir='../mesh_lry/')
     # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayPBEsolver/mesh_lry/')
-    omega.save_mesh('/scratch/gpfs/aagles/clayPBEsolver/mesh_lry/')
+    # omega.save_mesh('/scratch/gpfs/aagles/clayPBEsolver/mesh_lry/')
+    # omega.plot_solid2D(y_pos=10)
     # omega.plot_object()
     omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=8)
     # omega.save_psi('../data/psi_map_'+name+'.npy')

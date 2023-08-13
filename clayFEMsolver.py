@@ -16,10 +16,6 @@ import numpy as np
 from math import *
 import matplotlib.pyplot as plt
 import scipy.constants as constants
-from scipy.sparse import diags
-from scipy.sparse.linalg import spsolve
-from scipy.optimize import newton
-from mpl_toolkits.mplot3d import Axes3D
 import os
 
 
@@ -105,14 +101,8 @@ class Omega:
             start_x = int(np.where(x > loc[0] - half_Sx)[0][0]) # find the first time x reaches the clay
             end_x = int(np.where(x > loc[0] + half_Sx)[0][0])
 
-            if oneD: # if periodic in y:
-                y = [0, self.dy]
-                start_y = y[0]
-                end_y = y[-1]
-                half_Sy = self.dy / 2
-            else:
-                start_y = int(np.where(y > loc[1] - half_Sy)[0][0]) # find the first time y reaches the clay
-                end_y = int(np.where(y > loc[1] + half_Sy)[0][0])
+            start_y = int(np.where(y > loc[1] - half_Sy)[0][0]) # find the first time y reaches the clay
+            end_y = int(np.where(y > loc[1] + half_Sy)[0][0])
 
             for i in np.arange(start_x, end_x+1):
                 for j in np.arange(start_y, end_y+1):
@@ -153,15 +143,11 @@ class Omega:
 
         np.save(dir+'solid.npy', self.solid)
         np.save(dir+'surf.npy', self.surf)
-        np.save(dir+'sigma.npy', self.sigma)
    
 
    # Method to plot Psi
     def plot_solid2D(self, y_pos, oneD):
-        # If 1-D case
-        if oneD:
-            y_pos = self.dy / 2
-        # Check if y_index is within the domain
+
         if y_pos < 0 or y_pos >= self.Ly:
             print(f'Error: y_index should be in the range [0, {self.Ly}]', flush=True)
             return
@@ -176,7 +162,7 @@ class Omega:
         plt.colorbar(label='Potential V')
         plt.xlabel('x')
         plt.ylabel('z')
-        plt.title(f'Density map of potential $\Psi$ in xz plane at y-index {y_index}')
+        plt.title(f'Map of the Solid in xz plane at y-index {y_index}')
         plt.show()
     
     # Plotting the Object
@@ -207,10 +193,9 @@ class Omega:
     """
     Boundary Conditions:
                         Neumann at Omega edges
-                        E_s = -sigma/eps/eps_0 at fluid solid interface
-                        Psi value of all solid elements are set to psi_s to avoid discontinuities
-                        This shouldn't impact the accuracy of the results as only the surface elements
-                        are used to calculate the psi values of the fluid
+                        Psi_s = grahame equation at FSI
+                        Psi value of all solid elements are set to 0 
+                        Psi is not solved for anywhere inside of the solid
     """
     def solve_fluid(self, rho0, T):
         """
@@ -219,26 +204,32 @@ class Omega:
         """
 
         # Calculate surface potential, Grahame Equation
-        A = sigma_value**2 / (2*eps*constants.epsilon_0*constants.k*T*rho0)
-        B = constants.e / (constants.k * T)
-        psi_s = ( log(0.5*(A-sqrt(A+4)*sqrt(A)+2)) ) / B
+        A = constants.e / (constants.k * T)
+        B = sigma_value**2 / (4*constants.k*T*constants.epsilon_0*eps*rho0)
+        psi_s = - ( acosh(B + 1) ) / A
 
         # Set initial conditions
         self.psi[self.surf == 1] = psi_s
         print(psi_s)
 
-        # Define tolerance and maximum iterations for convergence
-        tolerance = 1e-6
-        max_iterations = 100
+        # Define maximum iterations for convergence and record error
+        max_iterations = 5000
+        abs_error = []
 
         for iteration in range(max_iterations):
             if (iteration % 1) == 0:
                 print('Iteration '+str(iteration), flush=True)
-                np.save('current_psi.npy', self.psi)
-
+                np.save('../data/current_psi_'+name+'.npy', self.psi)
+            elif (iteration == max_iterations-1):
+                np.save('../data/psi_map_'+name+'.npy', self.psi)
 
             # Create a copy of the potential field to calculate the change
             psi_old = self.psi.copy()
+            
+            # Initializing variables used for every calculation
+            a = self.dx * (1e-9) # converting to units of m
+            b = self.dy * (1e-9)
+            c = self.dz * (1e-9)
 
             # Update the potential field
             for i in range(1, self.Nx - 1):
@@ -249,14 +240,11 @@ class Omega:
                             RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
                                  * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
                             
-                            # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D
+                            # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D  (<-PB)
                             # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
                             A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
-                            a = self.dx
                             B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
-                            b = self.dy
                             C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
-                            c = self.dz
                             D = RHS 
                             numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
                             denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
@@ -271,13 +259,20 @@ class Omega:
             self.psi[:, :, 0] = self.psi[:, :, 1]
             self.psi[:, :, -1] = self.psi[:, :, -2]
 
+            # Record rate of convergence
+            abs_error.append(np.max(np.abs(psi_old - self.psi)))
+
+
             # Check for convergence
-            if np.max(np.abs(psi_old - self.psi)) < tolerance:
+            if abs_error[iteration] > abs_error[iteration-1]:
                 print(f'Converged after {iteration} iterations')
                 break
 
         if iteration == max_iterations - 1:
-            print('Warning: solve_laplace did not converge')
+            print('Warning: solve_fluid did not converge')
+
+        np.save('../data/abs_error_'+name+'.npy', abs_error)
+
 
 
     # Method to save the Psi map
@@ -286,43 +281,50 @@ class Omega:
 
 
 # Method to plot Psi
-    def plot_psi(self, y_pos):
+    def plot_psi(self, y_pos, read, fn):
         # Check if y_index is within the domain
         if y_pos < 0 or y_pos >= self.Ly:
-            print(f'Error: y_index should be in the range [0, {self.Ly}]', flush=True)
+            print(f'Error: y_index should be in the range [0, {self.Ly}]')
             return
 
         # Get the slice of the potential field at the given y-index
         y_index = int(round(y_pos/self.dy))
-        psi_slice = self.psi[:, y_index, :]
+        if read:
+            psi_slice = np.load(fn)[:, y_index, :]
+        else:
+            psi_slice = self.psi[:, y_index, :]
+        
+        psi_slice = psi_slice * 1000 # converting to mV
 
         # Create the plot
         plt.figure(figsize=(8, 6))
-        plt.imshow(psi_slice.T, origin='lower', extent=[0, self.Lx, 0, self.Lz], cmap='viridis')
-        plt.colorbar(label='Potential V')
-        plt.xlabel('x')
-        plt.ylabel('z')
-        plt.title(f'Density map of potential $\Psi$ in xz plane at y-index {y_index}')
-        # plt.show()
+        plt.imshow(psi_slice.T, origin='lower', extent=[0, self.Lx, 0, self.Lz], cmap='viridis') #, vmin=-0.2, vmax=0.8)
+        plt.colorbar(label='Potential $\Psi (mV)$')
+        plt.xlabel('x (nm)')
+        plt.ylabel('z (nm)')
+        plt.title(f'Density map of potential $\Psi (mV)$ in xz plane at y-index {y_index}')
+        plt.savefig('../data/psi_final.png', dpi=300)
+        plt.show()
         
 
 
 # Some Constants:
 eps         = 80   # dielectric constant of water
-sigma_value = -0.2 # charge density of a single mesh element (C/m^3)
-rho0        = 0.01 # number density of ions in the system
+sigma_value = -6.03E-3 # charge density of a single mesh element (C/m^3)
+rho0_M      = 1  # inputted rho density of ions in the system (mol/L)
+rho0        = rho0_M * constants.Avogadro * 1000  # rho density in units of ions/m^3
 T           = 300  # temperature (K)
+name        = 'sig_MMT_rho0_1_hr'
 
 # Steps to implement:
-oneD=False
 omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
-omega.initialize_solid(Sx=10, Sy=10, d=.2, R=10000, loc=[10,10,10], oneD=oneD, sigma_value=sigma_value, read=False, dir='../mesh/')
+omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], sigma_value=sigma_value, read=True, dir='../mesh_lry/')
 omega.save_mesh('../meshFlat/')
-omega.plot_solid2D(y_pos=10, oneD=oneD)
+omega.plot_solid2D(y_pos=10)
 # omega.plot_object()
 # omega.solve_fluid(rho0=rho0, T=T)
 # omega.save_psi('psi_map.npy')
-# omega.plot_psi(y_pos=25)
+# omega.plot_psi(y_pos=10, read=True, fn='../data/final_psi_rho0_'+str(rho0_M)+'.npy')
 
 
 

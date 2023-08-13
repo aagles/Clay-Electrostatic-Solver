@@ -312,7 +312,7 @@ class Omega:
 
 # Some Constants:
 eps         = 80   # dielectric constant of water
-sigma_value = -6.03E-3 # charge density of a single mesh element (C/m^3)
+sigma_value = -6.03E-3 # charge density of a single mesh element (C/m^2) (from DOI: 10.3934/matersci.2017.3.582)
 rho0_M      = 1  # inputted rho density of ions in the system (mol/L)
 rho0        = rho0_M * constants.Avogadro * 1000  # rho density in units of ions/m^3
 T           = 300  # temperature (K)
@@ -322,8 +322,8 @@ name        = 'rho0_1'
 
 if __name__ == '__main__':
     freeze_support()
-    omega = Omega(Lx=20, Lz=20, dx=.01, dz=.01)
-    omega.initialize_solid(Sx=10, d=.2, R=8, loc=[10,10], sigma_value=sigma_value, read=True, dir='../2Dmesh_hr/')
+    omega = Omega(Lx=20, Lz=20, dx=.1, dz=.1)
+    omega.initialize_solid(Sx=10, d=.2, R=8, loc=[10,10], sigma_value=sigma_value, read=False, dir='../2Dmesh_lr/')
     # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayPBEsolver/2Dmesh_hr/')
     # omega.plot_object()
     omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
