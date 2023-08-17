@@ -75,7 +75,7 @@ class Omega:
     ## SOLID Initialization Methods
     #### Initialize the indices for a solid element
 
-    def initialize_solid(self, Sx, Sy, d, R, loc, oneD, sigma_value, read, dir):
+    def initialize_solid(self, num_obj, Sx, Sy, d, R, loc, sigma_value, read, dir):
         """
         Defining the self.solid and self.surf for a solid rectangular object with width Sx by Sy and thickness, d
         Centering the object at [x_pos, y_pos, z_pos].
@@ -88,54 +88,55 @@ class Omega:
             # read all the necessary files to skip the above mesh initialization
             self.solid = np.load(os.path.join(dir,'solid.npy'))
             self.surf  = np.load(os.path.join(dir,'surf.npy'))
-            self.sigma = self.surf * sigma_value
+            self.sigma = np.load(os.path.join(dir,'sigma.npy'))
         else:
-            half_Sx = Sx / 2
-            half_Sy = Sy / 2
-            half_d  = d  / 2
-
+            for s in range(num_obj):
             
-            x = np.arange(0,self.Lx,self.dx)
-            y = np.arange(0,self.Ly,self.dy)
+                half_Sx = Sx[s] / 2
+                half_Sy = Sy[s] / 2
+                half_d  = d[s] / 2
+                
+                x = np.arange(0,self.Lx,self.dx)
+                y = np.arange(0,self.Ly,self.dy)
 
-            start_x = int(np.where(x > loc[0] - half_Sx)[0][0]) # find the first time x reaches the clay
-            end_x = int(np.where(x > loc[0] + half_Sx)[0][0])
+                start_x = int(np.where(x > loc[s,0] - half_Sx)[0][0]) # find the first time x reaches the clay
+                end_x = int(np.where(x > loc[s,0] + half_Sx)[0][0])
 
-            start_y = int(np.where(y > loc[1] - half_Sy)[0][0]) # find the first time y reaches the clay
-            end_y = int(np.where(y > loc[1] + half_Sy)[0][0])
+                start_y = int(np.where(y > loc[s,1] - half_Sy)[0][0]) # find the first time y reaches the clay
+                end_y = int(np.where(y > loc[s,1] + half_Sy)[0][0])
 
-            for i in np.arange(start_x, end_x+1):
-                for j in np.arange(start_y, end_y+1):
-                    x_val = x[i] # x-coordinate
-                    y_val = y[i] # y-coordinate
+                for i in np.arange(start_x, end_x+1):
+                    for j in np.arange(start_y, end_y+1):
+                        x_val = x[i] # x-coordinate
+                        y_val = y[i] # y-coordinate
 
-                    
-                    z_squared = R**2 - (x_val - loc[0])**2   # - (y - y_pos)**2
+                        
+                        z_squared = R[s]**2 - (x_val - loc[s,0])**2   # - (y - y_pos)**2
 
-                    if z_squared >= 0:
-                        z = np.sqrt(z_squared) + loc[2] - R
-                        start_index_z = int( (z - half_d) / self.dz )       
-                        end_index_z = int( (z + half_d) / self.dz )
+                        if z_squared >= 0:
+                            z = np.sqrt(z_squared) + loc[s,2] - R[s]
+                            start_index_z = int( (z - half_d) / self.dz )       
+                            end_index_z = int( (z + half_d) / self.dz )
 
-                        start_index_z = max(0, start_index_z)
-                        end_index_z = min(self.Nz - 1, end_index_z)
+                            start_index_z = max(0, start_index_z)
+                            end_index_z = min(self.Nz - 1, end_index_z)
 
-                        # Label Solid elements
-                        for kk in range(start_index_z, end_index_z + 1):
-                            self.solid[i, j, kk] = 1
+                            # Label Solid elements
+                            for kk in range(start_index_z, end_index_z + 1):
+                                self.solid[i, j, kk] = 1
 
-                        # Label Surface Elements
-                        self.surf[i, j, start_index_z] = 1
-                        self.surf[i, j, end_index_z] = 1
+                            # Label Surface Elements
+                            self.surf[i, j, start_index_z] = 1
+                            self.surf[i, j, end_index_z] = 1
 
-                        self.sigma[i, j, start_index_z] = sigma_value
-                        self.sigma[i, j, end_index_z] = sigma_value
+                            self.sigma[i, j, start_index_z] = sigma_value[s]
+                            self.sigma[i, j, end_index_z] = sigma_value[s]
 
-                        if ((int(i)==start_x or int(i)==end_x) or (int(j)==start_y or int(j)==end_y)):
-                            for kkkk in range(start_index_z, end_index_z + 1):
-                                self.surf[i, j, kkkk] = 1
-                                self.sigma[i, j, kkkk] = 1
-                            
+                            if ((int(i)==start_x or int(i)==end_x) or (int(j)==start_y or int(j)==end_y)):
+                                for kkkk in range(start_index_z, end_index_z + 1):
+                                    self.surf[i, j, kkkk] = 1
+                                    self.sigma[i, j, kkkk] = sigma_value[s]
+                                
                                     
 
     def save_mesh(self, dir):
@@ -143,10 +144,11 @@ class Omega:
 
         np.save(dir+'solid.npy', self.solid)
         np.save(dir+'surf.npy', self.surf)
+        np.save(dir+'sigma.npy', self.sigma)
    
 
    # Method to plot Psi
-    def plot_solid2D(self, y_pos, oneD):
+    def plot_solid2D(self, y_pos):
 
         if y_pos < 0 or y_pos >= self.Ly:
             print(f'Error: y_index should be in the range [0, {self.Ly}]', flush=True)
@@ -154,7 +156,7 @@ class Omega:
 
         # Get the slice of the potential field at the given y-index
         y_index = int(round(y_pos/self.dy))
-        psi_slice = self.solid[:, y_index, :]
+        psi_slice = self.surf[:, y_index, :]
 
         # Create the plot
         plt.figure(figsize=(8, 6))
@@ -310,16 +312,25 @@ class Omega:
 
 # Some Constants:
 eps         = 80   # dielectric constant of water
-sigma_value = -6.03E-3 # charge density of a single mesh element (C/m^3)
+sigma_MMT = -6.03E-3 # charge density of a single mesh element (C/m^3)
 rho0_M      = 1  # inputted rho density of ions in the system (mol/L)
 rho0        = rho0_M * constants.Avogadro * 1000  # rho density in units of ions/m^3
 T           = 300  # temperature (K)
 name        = 'sig_MMT_rho0_1_hr'
 
+# Inputs
+Sx = [10,10]
+Sy = [10,10]
+d  = [1,1]
+R  = [8,8]
+loc= np.array([[10, 10, 6.1],
+              [10, 10, 14.2]])
+sigma_value = [sigma_MMT, 4*sigma_MMT]
+
 # Steps to implement:
 omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
-omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], sigma_value=sigma_value, read=True, dir='../mesh_lry/')
-omega.save_mesh('../meshFlat/')
+omega.initialize_solid(num_obj=2, Sx=Sx, Sy=Sy, d=d, R=R, loc=loc, sigma_value=sigma_value, read=False, dir='../mesh_lry/')
+# omega.save_mesh('../meshFlat/')
 omega.plot_solid2D(y_pos=10)
 # omega.plot_object()
 # omega.solve_fluid(rho0=rho0, T=T)

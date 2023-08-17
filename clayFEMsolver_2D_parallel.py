@@ -116,7 +116,7 @@ class Omega:
             # read all the necessary files to skip the above mesh initialization
             self.solid = np.load(os.path.join(dir,'solid.npy'))
             self.surf  = np.load(os.path.join(dir,'surf.npy'))
-            self.sigma = self.surf * sigma_value
+            self.sigma = np.load(os.path.join(dir,'sigma.npy'))
         else:
             half_Sx = Sx / 2
             half_d  = d  / 2
@@ -163,6 +163,7 @@ class Omega:
 
         np.save(dir+'solid.npy', self.solid)
         np.save(dir+'surf.npy', self.surf)
+        np.save(dir+'sigma.npy', self.sigma)
     
 
     # Plotting the Object
@@ -175,7 +176,7 @@ class Omega:
         plt.xlabel('x (nm)')
         plt.ylabel('z (nm)')
         plt.title(f'Shape of 2D object in xz plane')
-        plt.savefig('../data/2d_solid.png', dpi=300)
+        # plt.savefig('../data/2d_solid.png', dpi=300)
         plt.show()
 
 
@@ -223,6 +224,11 @@ class Omega:
             if (iteration % 10) == 0:
                 print('Iteration '+str(iteration))
                 np.save('../data/2D_current_psi_'+name+'.npy', self.psi)
+
+                if abs_error[iteration] > abs_error[iteration-1]:
+                    print(f'Converged after {iteration} iterations')
+                    break
+
             elif (iteration == max_iterations-1):
                 np.save('../data/2D_psi_map_'+name+'.npy', self.psi)
 
@@ -266,9 +272,9 @@ class Omega:
             abs_error[iteration] = np.max(np.abs(psi_old - self.psi))
 
             # Check for convergence
-            if abs_error[iteration] > abs_error[iteration-1]:
-                print(f'Converged after {iteration} iterations')
-                break
+            # if abs_error[iteration] > abs_error[iteration-1]:
+            #     print(f'Converged after {iteration} iterations')
+            #     break
 
 
 
@@ -323,8 +329,8 @@ name        = 'rho0_1'
 if __name__ == '__main__':
     freeze_support()
     omega = Omega(Lx=20, Lz=20, dx=.1, dz=.1)
-    omega.initialize_solid(Sx=10, d=.2, R=8, loc=[10,10], sigma_value=sigma_value, read=False, dir='../2Dmesh_lr/')
-    # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayPBEsolver/2Dmesh_hr/')
+    omega.initialize_solid(Sx=10, d=.2, R=10000, loc=[10,10], sigma_value=sigma_value, read=True, dir='../2Dmesh_lr_flat/')
+    # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayPBEsolver/2Dmesh_lr_flat/')
     # omega.plot_object()
     omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
     # omega.save_psi('../data/2D_psi_map_'+name+'.npy')
