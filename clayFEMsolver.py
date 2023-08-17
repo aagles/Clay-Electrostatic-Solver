@@ -108,7 +108,7 @@ class Omega:
                 for i in np.arange(start_x, end_x+1):
                     for j in np.arange(start_y, end_y+1):
                         x_val = x[i] # x-coordinate
-                        y_val = y[i] # y-coordinate
+                        y_val = y[j] # y-coordinate
 
                         
                         z_squared = R[s]**2 - (x_val - loc[s,0])**2   # - (y - y_pos)**2
@@ -207,11 +207,12 @@ class Omega:
 
         # Calculate surface potential, Grahame Equation
         A = constants.e / (constants.k * T)
-        B = sigma_value**2 / (4*constants.k*T*constants.epsilon_0*eps*rho0)
-        psi_s = - ( acosh(B + 1) ) / A
+        B = np.divide(np.square(self.sigma) , (4*constants.k*T*constants.epsilon_0*eps*rho0))
+        self.psi = - ( np.arccosh(B + 1) ) / A
 
-        # Set initial conditions
-        self.psi[self.surf == 1] = psi_s
+        # Print surface potential values
+        B_ind = np.divide(np.square(sigma_value) , (4*constants.k*T*constants.epsilon_0*eps*rho0))
+        psi_s = - ( np.arccosh(B_ind + 1) ) / A
         print(psi_s)
 
         # Define maximum iterations for convergence and record error
@@ -242,16 +243,19 @@ class Omega:
                             RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
                                  * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
                             
-                            # for eqn with the form: (2x+A)/a^2 + (2x+B)/b^2 + (2x+C)/c^2 = D  (<-PB)
-                            # x = [Da^2b^2c^2 - Ab^2c^2 - Ba^2c^2 - Ca^2b^2] / 2(b^2c^2 + a^2c^2 + a^2b^2)
-                            A = psi_old[i+1,j,k] + psi_old[i-1,j,k]
-                            B = psi_old[i,j+1,k] + psi_old[i,j-1,k]
-                            C = psi_old[i,j,k+1] + psi_old[i,j,k-1]
-                            D = RHS 
-                            numerator = (D * a**2 * b**2 * c**2) - (A * b**2 * c**2 + B * a**2 * c**2 + C * a**2 * b**2)
-                            denominator = 2 * (b**2 * c**2 + a**2 * c**2 + a**2 * b**2)
+                            # Central differences (from 7-point stencil)
+                            Yxx = (psi_old[i+1, j, k] - 2*psi_old[i, j, k] + psi_old[i-1, j, k]) / a**2
+                            Yyy = (psi_old[i, j+1, k] - 2*psi_old[i, j, k] + psi_old[i, j-1, k]) / b**2
+                            Yzz = (psi_old[i, j, k+1] - 2*psi_old[i, j, k] + psi_old[i, j, k-1]) / c**2
 
-                            self.psi[i, j, k] = numerator / denominator
+                            # Additional differences for a 27-point stencil
+                            Yxy = (psi_old[i+1, j+1, k] - psi_old[i+1, j-1, k] - psi_old[i-1, j+1, k] + psi_old[i-1, j-1, k]) / (2*a*b)
+                            Yxz = (psi_old[i+1, j, k+1] - psi_old[i+1, j, k-1] - psi_old[i-1, j, k+1] + psi_old[i-1, j, k-1]) / (2*a*c)
+                            Yyz = (psi_old[i, j+1, k+1] - psi_old[i, j+1, k-1] - psi_old[i, j-1, k+1] + psi_old[i, j-1, k-1]) / (2*b*c)
+
+                            # Update Y with a simplistic average approach
+                            laplacian_avg = (Yxx + Yyy + Yzz + Yxy + Yxz + Yyz) / 6
+                            self.psi[i, j, k] = psi_old[i, j, k] + laplacian_avg - RHS
 
             # Apply Neumann boundary conditions at the edges of the domain
             self.psi[0, :, :] = self.psi[1, :, :]
@@ -266,9 +270,9 @@ class Omega:
 
 
             # Check for convergence
-            if abs_error[iteration] > abs_error[iteration-1]:
-                print(f'Converged after {iteration} iterations')
-                break
+            # if abs_error[iteration] > abs_error[iteration-1]:
+            #     print(f'Converged after {iteration} iterations')
+            #     break
 
         if iteration == max_iterations - 1:
             print('Warning: solve_fluid did not converge')
@@ -312,11 +316,11 @@ class Omega:
 
 # Some Constants:
 eps         = 80   # dielectric constant of water
-sigma_MMT = -6.03E-3 # charge density of a single mesh element (C/m^3)
+sigma_MMT   = -6.03E-3 # charge density of a single mesh element (C/m^3)
 rho0_M      = 1  # inputted rho density of ions in the system (mol/L)
 rho0        = rho0_M * constants.Avogadro * 1000  # rho density in units of ions/m^3
 T           = 300  # temperature (K)
-name        = 'sig_MMT_rho0_1_hr'
+name        = 'sig_MMT_rho0_1_lr'
 
 # Inputs
 Sx = [10,10]
@@ -329,11 +333,11 @@ sigma_value = [sigma_MMT, 4*sigma_MMT]
 
 # Steps to implement:
 omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
-omega.initialize_solid(num_obj=2, Sx=Sx, Sy=Sy, d=d, R=R, loc=loc, sigma_value=sigma_value, read=False, dir='../mesh_lry/')
-# omega.save_mesh('../meshFlat/')
-omega.plot_solid2D(y_pos=10)
+omega.initialize_solid(num_obj=2, Sx=Sx, Sy=Sy, d=d, R=R, loc=loc, sigma_value=sigma_value, read=True, dir='../mesh_2obj/')
+# omega.save_mesh('../mesh_2obj/')
+# omega.plot_solid2D(y_pos=10)
 # omega.plot_object()
-# omega.solve_fluid(rho0=rho0, T=T)
+omega.solve_fluid(rho0=rho0, T=T)
 # omega.save_psi('psi_map.npy')
 # omega.plot_psi(y_pos=10, read=True, fn='../data/final_psi_rho0_'+str(rho0_M)+'.npy')
 
