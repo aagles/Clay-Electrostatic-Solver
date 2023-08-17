@@ -212,7 +212,7 @@ class Omega:
 
         # Print surface potential values
         B_ind = np.divide(np.square(sigma_value) , (4*constants.k*T*constants.epsilon_0*eps*rho0))
-        psi_s = - ( np.arccosh(B_ind + 1) ) / A
+        psi_s = ( np.arccosh(B_ind + 1) ) / A
         print(psi_s)
 
         # Define maximum iterations for convergence and record error
@@ -243,19 +243,22 @@ class Omega:
                             RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
                                  * (np.exp(-constants.e*psi_old[i,j,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,j,k]/(constants.k*T))))
                             
-                            # Central differences (from 7-point stencil)
-                            Yxx = (psi_old[i+1, j, k] - 2*psi_old[i, j, k] + psi_old[i-1, j, k]) / a**2
-                            Yyy = (psi_old[i, j+1, k] - 2*psi_old[i, j, k] + psi_old[i, j-1, k]) / b**2
-                            Yzz = (psi_old[i, j, k+1] - 2*psi_old[i, j, k] + psi_old[i, j, k-1]) / c**2
+                            # Central differences for face-centered points
+                            psixx = (psi_old[i+1, j, k] - 2*psi_old[i, j, k] + psi_old[i-1, j, k]) / a**2
+                            psiyy = (psi_old[i, j+1, k] - 2*psi_old[i, j, k] + psi_old[i, j-1, k]) / b**2
+                            psizz = (psi_old[i, j, k+1] - 2*psi_old[i, j, k] + psi_old[i, j, k-1]) / c**2
 
-                            # Additional differences for a 27-point stencil
-                            Yxy = (psi_old[i+1, j+1, k] - psi_old[i+1, j-1, k] - psi_old[i-1, j+1, k] + psi_old[i-1, j-1, k]) / (2*a*b)
-                            Yxz = (psi_old[i+1, j, k+1] - psi_old[i+1, j, k-1] - psi_old[i-1, j, k+1] + psi_old[i-1, j, k-1]) / (2*a*c)
-                            Yyz = (psi_old[i, j+1, k+1] - psi_old[i, j+1, k-1] - psi_old[i, j-1, k+1] + psi_old[i, j-1, k-1]) / (2*b*c)
+                            # Edge-centered points
+                            psixy = (psi_old[i+1, j+1, k] + psi_old[i-1, j-1, k] - psi_old[i-1, j+1, k] - psi_old[i+1, j-1, k]) / (4*a*b)
+                            psixz = (psi_old[i+1, j, k+1] + psi_old[i-1, j, k-1] - psi_old[i-1, j, k+1] - psi_old[i+1, j, k-1]) / (4*a*c)
+                            psiyz = (psi_old[i, j+1, k+1] + psi_old[i, j-1, k-1] - psi_old[i, j-1, k+1] - psi_old[i, j+1, k-1]) / (4*b*c)
 
-                            # Update Y with a simplistic average approach
-                            laplacian_avg = (Yxx + Yyy + Yzz + Yxy + Yxz + Yyz) / 6
-                            self.psi[i, j, k] = psi_old[i, j, k] + laplacian_avg - RHS
+                            # Corner points
+                            psixyz = (psi_old[i+1, j+1, k+1] + psi_old[i-1, j-1, k-1] + psi_old[i+1, j-1, k-1] + psi_old[i-1, j+1, k+1] - psi_old[i+1, j-1, k+1] - psi_old[i-1, j+1, k-1] - psi_old[i+1, j+1, k-1] - psi_old[i-1, j-1, k+1]) / (8*a*b*c)
+
+                            # Compute Laplacian and update
+                            laplacian = psixx + psiyy + psizz + psixy + psixz + psiyz + psixyz
+                            self.psi[i, j, k] = psi_old[i, j, k] + laplacian - RHS
 
             # Apply Neumann boundary conditions at the edges of the domain
             self.psi[0, :, :] = self.psi[1, :, :]
@@ -317,7 +320,7 @@ class Omega:
 # Some Constants:
 eps         = 80   # dielectric constant of water
 sigma_MMT   = -6.03E-3 # charge density of a single mesh element (C/m^3)
-rho0_M      = 1  # inputted rho density of ions in the system (mol/L)
+rho0_M      = .1  # inputted rho density of ions in the system (mol/L)
 rho0        = rho0_M * constants.Avogadro * 1000  # rho density in units of ions/m^3
 T           = 300  # temperature (K)
 name        = 'sig_MMT_rho0_1_lr'
@@ -332,9 +335,9 @@ loc= np.array([[10, 10, 6.1],
 sigma_value = [sigma_MMT, 4*sigma_MMT]
 
 # Steps to implement:
-omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
-omega.initialize_solid(num_obj=2, Sx=Sx, Sy=Sy, d=d, R=R, loc=loc, sigma_value=sigma_value, read=True, dir='../mesh_2obj/')
-# omega.save_mesh('../mesh_2obj/')
+omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=1, dz=.1)
+omega.initialize_solid(num_obj=2, Sx=Sx, Sy=Sy, d=d, R=R, loc=loc, sigma_value=sigma_value, read=True, dir='../mesh_lry/')
+# omega.save_mesh('../mesh_lry/')
 # omega.plot_solid2D(y_pos=10)
 # omega.plot_object()
 omega.solve_fluid(rho0=rho0, T=T)

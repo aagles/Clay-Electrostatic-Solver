@@ -355,22 +355,31 @@ class Omega:
 
 # Some Constants:
 eps         = 80   # dielectric constant of water
-sigma_value = -6.03E-3 # charge density of a single mesh element (C/m^3)
+sigma_MMT   = -6.03E-3 # charge density of a single mesh element (C/m^3)
 rho0_M      = 1  # inputted rho density of ions in the system (mol/L)
 rho0        = rho0_M * constants.Avogadro * 1000  # rho density in units of ions/m^3
 T           = 300  # temperature (K)
 name        = 'sig_MMT_rho0_1_hr'
 
+# Inputs
+Sx = [10,10]
+Sy = [10,10]
+d  = [1,1]
+R  = [8,8]
+loc= np.array([[10, 10, 6.1],
+              [10, 10, 14.2]])
+sigma_value = [sigma_MMT, 4*sigma_MMT]
+
 
 if __name__ == '__main__':
     freeze_support()
-    omega = Omega(Lx=20, Ly=20, Lz=20, dx=.01, dy=2, dz=.01)
-    omega.initialize_solid(Sx=10, Sy=10, d=.2, R=8, loc=[10,10,10], sigma_value=sigma_value, read=True, dir='../mesh_lry/')
+    omega = Omega(Lx=20, Ly=20, Lz=20, dx=.1, dy=.1, dz=.1)
+    omega.initialize_solid(num_obj=2, Sx=Sx, Sy=Sy, d=d, R=R, loc=loc, sigma_value=sigma_value, read=True, dir='../mesh_2obj/')
     # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayPBEsolver/mesh_lry/')
     # omega.save_mesh('/scratch/gpfs/aagles/clayPBEsolver/mesh_lry/')
     # omega.plot_solid2D(y_pos=10)
     # omega.plot_object()
-    omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=8)
+    omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
     # omega.save_psi('../data/psi_map_'+name+'.npy')
     # omega.plot_psi(y_pos=10, read=True, fn='../data/final_psi_rho0_'+str(rho0_M)+'.npy')
 
