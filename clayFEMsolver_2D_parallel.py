@@ -16,10 +16,11 @@ import numpy as np
 from math import *
 import matplotlib.pyplot as plt
 import scipy.constants as constants
-from scipy.sparse import diags
-from scipy.sparse.linalg import spsolve
-from scipy.optimize import newton
-from mpl_toolkits.mplot3d import Axes3D
+from scipy import signal
+# from scipy.sparse import diags
+# from scipy.sparse.linalg import spsolve
+# from scipy.optimize import newton
+# from mpl_toolkits.mplot3d import Axes3D
 from multiprocessing import Pool, freeze_support
 import os 
 
@@ -43,18 +44,19 @@ def solve_subdomain(args):
     for i in range(x_start, x_end):
         for k in range(1, subdomain[2] - 1):
             if solid[i, k] == 0: # Only update for fluid points
-
+                
+                # the current values of psi, setting the center value to zero b/c we will be solving for it
                 psi_mat = np.array([
-                    [psi_old[i-1,k-1], psi_old[i-1,k], psi_old[i-1,k+1],
-                    [psi_old[i,k-1],      0,           psi_old[i,k+1]],
+                    [psi_old[i-1,k-1], psi_old[i-1,k], psi_old[i-1,k+1]],
+                    [psi_old[i,k-1],          0,       psi_old[i,k+1]],
                     [psi_old[i+1,k-1], psi_old[i+1,k], psi_old[i+1,k+1]]
                 ])
 
                 RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
                         * (np.exp(-constants.e*psi_old[i,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,k]/(constants.k*T))))
                 
-                # Solving for Psi[i,j,k]
-                psi_domain[i,k] = (RHS - np.convolve(lap_kern,psi_mat)) / lap_kern[1,1]
+                # Solving for Psi[i,j,k] = (RHS - Lap * Psi) / Psi_lap_coeff
+                psi_domain[i,k] = ( RHS - np.sum(np.multiply(lap_kern,psi_mat)) ) / lap_kern[1,1]
 
 
     return psi_domain[x_start:x_end,:]
@@ -333,10 +335,10 @@ name        = 'rho0_1'
 if __name__ == '__main__':
     freeze_support()
     omega = Omega(Lx=20, Lz=20, dx=.1, dz=.1)
-    omega.initialize_solid(Sx=10, d=.2, R=10000, loc=[10,10], sigma_value=sigma_value, read=True, dir='../2Dmesh_lr_flat/')
+    omega.initialize_solid(Sx=10, d=.2, R=100000, loc=[10,10.01], sigma_value=sigma_value, read=False, dir='../2Dmesh_lr_flat/')
     # omega.save_mesh('/Volumes/GoogleDrive/My Drive/research/projects/LBNL/ClayPBEsolver/2Dmesh_lr_flat/')
     # omega.plot_object()
-    omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
+    # omega.solve_fluid_parallel(rho0=rho0, T=T, num_processes=4)
     # omega.save_psi('../data/2D_psi_map_'+name+'.npy')
     # omega.plot_psi(y_pos=10, read=True, fn='../data/final_psi_rho0_'+str(rho0_M)+'.npy')
 
