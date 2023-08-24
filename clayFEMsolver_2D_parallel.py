@@ -23,11 +23,17 @@ from mpl_toolkits.mplot3d import Axes3D
 from multiprocessing import Pool, freeze_support
 import os 
 
-
+# Note that this will only work if dx=dy
 
 # Function to solve subdomains
 def solve_subdomain(args):
     subdomain, psi_old, solid, rho0, T, a, c = args
+
+    lap_kern = np.array([
+        [0.25, 0.5, 0.25],
+        [0.5,   -3,  0.5],
+        [0.25, 0.5, 0.25]
+    ])/a**2
 
     psi_domain = psi_old.copy() #[subdomain[0]:subdomain[1],:,:]
     # Update the potential field
@@ -38,19 +44,17 @@ def solve_subdomain(args):
         for k in range(1, subdomain[2] - 1):
             if solid[i, k] == 0: # Only update for fluid points
 
+                psi_mat = np.array([
+                    [psi_old[i-1,k-1], psi_old[i-1,k], psi_old[i-1,k+1],
+                    [psi_old[i,k-1],      0,           psi_old[i,k+1]],
+                    [psi_old[i+1,k-1], psi_old[i+1,k], psi_old[i+1,k+1]]
+                ])
+
                 RHS = (((rho0*constants.e)/(eps*constants.epsilon_0)) 
                         * (np.exp(-constants.e*psi_old[i,k]/(constants.k*T)) - np.exp(constants.e*psi_old[i,k]/(constants.k*T))))
                 
                 # Solving for Psi[i,j,k]
-                # for eqn with the form: (2x+A)/a^2 + (2x+C)/c^2 = D
-                # x = [Da^2b^2c^2 - Ac^2 - Ca^2] / 2(c^2 + a^2c^2 + a^2)
-                A = psi_old[i+1,k] + psi_old[i-1,k]
-                C = psi_old[i,k+1] + psi_old[i,k-1]
-                D = RHS 
-                numerator = (D * a**2 * c**2) - (A * c**2 +  C * a**2)
-                denominator = 2 * (c**2 + a**2 * c**2 + a**2)
-
-                psi_domain[i, k] = numerator / denominator
+                psi_domain[i,k] = (RHS - np.convolve(lap_kern,psi_mat)) / lap_kern[1,1]
 
 
     return psi_domain[x_start:x_end,:]
